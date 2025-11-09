@@ -129,6 +129,31 @@ fn parseObject(parser: *Parser, allocator: Allocator) Error!ast.Object {
     return error.NotImplemented;
 }
 
+test "Parse Field" {
+    {
+        const input = "hello: [World]";
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const field = parser.parseField(std.testing.allocator) catch |err| {
+            if (err == Parser.ParserError.UnexpectedToken) {
+                std.debug.print("Error: wanted {s}\n", .{parser.error_info.wanted});
+                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
+                std.debug.print("At: {d}\n", .{parser.lexer.read_position});
+            }
+            return err;
+        };
+
+        try std.testing.expectEqual(true, field.field_type.is_list);
+        const child = field.field_type.child orelse return error.ExpectedChild;
+        defer std.testing.allocator.destroy(child);
+
+        const child_name = child.type_ref orelse return error.ExpectedNamedChild;
+        try std.testing.expectEqualStrings("World", child_name);
+    }
+}
+
 fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const field_name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
@@ -138,10 +163,14 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
         },
     };
 
-    parser.advance();
+    try parser.advance();
+
+    if (parser.current_token.token_type == .l_paren) {
+        // handle arguments
+    }
 
     if (parser.current_token.token_type == .colon) {
-        parser.advance();
+        try parser.advance();
     } else {
         parser.error_info.wanted = "colon following field name identifier";
         return error.UnexpectedToken;
@@ -149,37 +178,44 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     const named_type = try parseNamedType(parser, allocator);
 
+    while (parser.peek_token.token_type == .at_sign) {
+        // handle directives
+    }
+
     return ast.Field{
         .name = field_name,
         .field_type = named_type,
+        .arguments = &[_]ast.Argument{},
+        .directives = &[_]ast.Directive{},
     };
 }
 
 fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
     if (parser.current_token.token_type == .l_bracket) {
-        parser.advance();
+        try parser.advance();
 
         const child = try allocator.create(ast.NamedType);
         child.* = try parseNamedType(parser, allocator);
 
-        var nullable = true;
-        if (parser.peek_token.token_type == .ex_mark) {
-            nullable = false;
-            parser.advance();
-        }
-
         if (parser.current_token.token_type == .r_bracket) {
-            parser.advance();
-            return ast.NamedType{
-                .child = child,
-                .is_list = true,
-                .is_nullable = nullable,
-                .type_ref = null,
-            };
+            try parser.advance();
         } else {
             parser.error_info.wanted = "closing delimiter for [";
             return error.UnexpectedToken;
         }
+
+        var nullable = true;
+        if (parser.current_token.token_type == .ex_mark) {
+            nullable = false;
+            try parser.advance();
+        }
+
+        return ast.NamedType{
+            .child = child,
+            .is_list = true,
+            .is_nullable = nullable,
+            .type_ref = null,
+        };
     }
 
     const type_ref = switch (parser.current_token.token_type) {
@@ -190,11 +226,13 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
         },
     };
 
+    try parser.advance();
+
     var nullable = true;
 
-    if (parser.peek_token.token_type == .ex_mark) {
+    if (parser.current_token.token_type == .ex_mark) {
         nullable = false;
-        parser.advance();
+        try parser.advance();
     }
 
     return ast.NamedType{

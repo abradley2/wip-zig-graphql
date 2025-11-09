@@ -15,17 +15,10 @@ pub const DirectiveTarget: type = []const u8;
 
 pub const TypeDeclaration: type = struct {
     type_ref: NamedTypeRef,
-    data: GraphData,
+    graphql_type: GraphQlType,
 };
 
-pub const GraphDataType: type = enum {
-    object_type,
-    scalar_type,
-    union_type,
-    enum_type,
-};
-
-pub const GraphData: type = union(GraphDataType) {
+pub const GraphQlType: type = union(enum) {
     object_type: Object,
     scalar_type: void,
     union_type: []NamedTypeRef,
@@ -49,9 +42,7 @@ pub const NamedTypeRef: type = []const u8;
 
 pub const Argument: type = struct {
     name: []const u8,
-    type_ref: NamedTypeRef,
-    is_list: bool,
-    is_nullable: bool,
+    named_type: NamedType,
     default: ?Value,
 };
 

@@ -7,6 +7,7 @@ const Lexer = @This();
 pub const Error: type = error{
     UnknownToken,
     UnterminatedString,
+    UnexpectedEof,
 };
 
 input: []const u8,
@@ -196,11 +197,17 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
         '"' => .string,
         '|' => .pipe,
         '!' => .ex_mark,
+        0x00 => .eof,
         else => if (isIdentifier(lexer.current_char, 0))
             .identifier
         else
             return Error.UnknownToken,
     };
+
+    if (token.token_type == .eof) {
+        token.token_text = "<EOF>";
+        return token;
+    }
 
     token.token_text = switch (token.token_type) {
         .string => try readString(lexer),
