@@ -72,7 +72,7 @@ test "Parse Schema Declaration" {
             else => return error.ExpectedGraphType,
         };
 
-        const is_scalar = switch (graph_type.data) {
+        const is_scalar = switch (graph_type.graphql_type) {
             .scalar_type => true,
             else => false,
         };
@@ -84,11 +84,17 @@ test "Parse Schema Declaration" {
 
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
     const declaration_token = parser.current_token;
-    _ = allocator;
 
     return switch (declaration_token.token_type) {
         .keyword_type, .keyword_input, .keyword_interface => {
             try parser.advance();
+
+            var object_kind: ast.ObjectKind = .default_type;
+            if (declaration_token.token_type == .keyword_input) object_kind = .input_type;
+            if (declaration_token.token_type == .keyword_interface) object_kind = .interface_type;
+
+            const object = try parseObject(parser, allocator, object_kind);
+            _ = object;
             return error.NotImplemented;
         },
         .keyword_scalar => {
@@ -104,7 +110,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             return ast.SchemaDeclaration{
                 .type_delcaration = ast.TypeDeclaration{
                     .type_ref = identifier,
-                    .data = .scalar_type,
+                    .graphql_type = .scalar_type,
                 },
             };
         },
@@ -123,10 +129,46 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
-fn parseObject(parser: *Parser, allocator: Allocator) Error!ast.Object {
-    _ = parser;
-    _ = allocator;
-    return error.NotImplemented;
+fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKind) Error!ast.Object {
+    if (parser.current_token.token_type == .keyword_implements) {
+        // todo handle implements
+    }
+
+    if (parser.current_token.token_type == .at_sign and
+        parser.peek_token.token_type == .identifier)
+    {
+        // todo handle directives
+    }
+
+    if (parser.current_token.token_type == .l_brace) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "{ for object selection";
+        return error.UnexpectedToken;
+    }
+
+    var fields: ArrayList(ast.Field) = .empty;
+    errdefer {
+        if (fields.items.len > 0) allocator.free(fields.items);
+    }
+
+    while (parser.current_token.token_type != .r_brace) {
+        if (parser.current_token.token_type == .eof) {
+            parser.error_info.wanted = "either next field for object or ending } brace";
+            return error.UnexpectedToken;
+        }
+
+        try fields.append(allocator, try parseField(parser, allocator));
+    }
+
+    try parser.advance();
+
+    return ast.Object{
+        .directives = &[_]ast.Directive{},
+        .implements = &[_][]const u8{},
+        .fields = fields.items,
+        .kind = object_kind,
+    };
 }
 
 test "Parse Field" {
@@ -196,6 +238,7 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
 
         const child = try allocator.create(ast.NamedType);
         child.* = try parseNamedType(parser, allocator);
+        errdefer allocator.destroy(child);
 
         if (parser.current_token.token_type == .r_bracket) {
             try parser.advance();
