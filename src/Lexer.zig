@@ -200,6 +200,8 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
         0x00 => .eof,
         else => if (isIdentifier(lexer.current_char, 0))
             .identifier
+        else if (std.ascii.isDigit() or lexer.current_char == '-')
+            .number
         else
             return Error.UnknownToken,
     };
@@ -211,6 +213,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
 
     token.token_text = switch (token.token_type) {
         .string => try readString(lexer),
+        .number => readNumber(lexer),
         .identifier => readIdentifier(lexer),
         else => lexer.input[lexer.position..lexer.read_position],
     };
@@ -258,6 +261,21 @@ fn readString(lexer: *Lexer) error{UnterminatedString}![]const u8 {
 
     lexer.read_position = end + 1;
     return lexer.input[lexer.position .. end + 1];
+}
+
+fn readNumber(lexer: *Lexer) []const u8 {
+    var end = lexer.read_position;
+
+    while (end < lexer.input.len and
+        (std.ascii.isDigit(lexer.input[end]) or
+            lexer.input[end] == '-' or
+            lexer.input[end] == '.'))
+    {
+        end += 1;
+    }
+
+    lexer.read_position = end;
+    return lexer.input[lexer.position..end];
 }
 
 fn readIdentifier(lexer: *Lexer) []const u8 {

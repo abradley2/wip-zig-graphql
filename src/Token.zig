@@ -21,6 +21,7 @@ pub const TokenType: type = enum(u8) {
     // literals and identifiers
     identifier,
     string,
+    number,
 
     // keywords
     keyword_type,

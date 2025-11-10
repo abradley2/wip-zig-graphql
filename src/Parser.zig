@@ -129,6 +129,40 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
+test "Parse Object" {
+    {
+        const input =
+            \\{
+            \\ a: Int!
+            \\ b: [String]
+            \\}
+        ;
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const object = parseObject(&parser, std.testing.allocator, .default_type) catch |err| {
+            if (err == error.UnexpectedToken) {
+                std.debug.print("Wanted: {s}\n", .{parser.error_info.wanted});
+                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
+                std.debug.print("At: {d}\n", .{parser.lexer.position});
+            }
+            return err;
+        };
+
+        try std.testing.expectEqual(2, object.fields.len);
+        try std.testing.expectEqualStrings("a", object.fields[0].name);
+        try std.testing.expectEqualStrings("b", object.fields[1].name);
+
+        for (object.fields) |field| {
+            if (field.field_type.child) |c| {
+                std.testing.allocator.destroy(c);
+            }
+        }
+
+        std.testing.allocator.free(object.fields);
+    }
+}
+
 fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKind) Error!ast.Object {
     if (parser.current_token.token_type == .keyword_implements) {
         // todo handle implements
@@ -169,6 +203,31 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
         .fields = fields.items,
         .kind = object_kind,
     };
+}
+
+fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
+    _ = allocator;
+    if (parser.current_token.token_type == .number) {
+        if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, '.')) {
+            const float_value = std.fmt.parseFloat(f64, parser.current_token.token_text) catch {
+                parser.error_info.wanted = "floating point number";
+                return error.UnexpectedToken;
+            };
+
+            return ast.Value{
+                .float_type = float_value,
+            };
+        }
+
+        const int_value = std.fmt.parseInt(i64, parser.current_token.token_text, 10) catch {
+            parser.error_info.wanted = "integer number";
+            return error.UnexpectedToken;
+        };
+
+        return ast.Value{
+            .int_type = int_value,
+        };
+    }
 }
 
 test "Parse Field" {
