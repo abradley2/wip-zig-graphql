@@ -35,6 +35,9 @@ pub const TokenType: type = enum(u8) {
     keyword_subscription,
     keyword_on,
     keyword_implements,
+    keyword_true,
+    keyword_false,
+    keyword_null,
 
     // special
     unknown,

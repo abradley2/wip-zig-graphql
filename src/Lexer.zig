@@ -200,7 +200,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
         0x00 => .eof,
         else => if (isIdentifier(lexer.current_char, 0))
             .identifier
-        else if (std.ascii.isDigit() or lexer.current_char == '-')
+        else if (std.ascii.isDigit(lexer.current_char) or lexer.current_char == '-')
             .number
         else
             return Error.UnknownToken,
@@ -231,6 +231,9 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
             .{ "subscription", TokenType.keyword_subscription },
             .{ "on", TokenType.keyword_on },
             .{ "implements", TokenType.keyword_implements },
+            .{ "true", TokenType.keyword_true },
+            .{ "false", TokenType.keyword_false },
+            .{ "null", TokenType.keyword_null },
         });
 
         if (keyword_map.get(token.token_text)) |keyword_token_type| {

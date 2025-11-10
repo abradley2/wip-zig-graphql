@@ -214,6 +214,8 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
                 return error.UnexpectedToken;
             };
 
+            try parser.advance();
+
             return ast.Value{
                 .float_type = float_value,
             };
@@ -224,8 +226,50 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
             return error.UnexpectedToken;
         };
 
+        try parser.advance();
+
         return ast.Value{
             .int_type = int_value,
+        };
+    }
+
+    if (parser.current_token.token_type == .string) {
+        try parser.advance();
+
+        return ast.Value{
+            .string_type = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1],
+        };
+    }
+
+    if (parser.current_token.token_type == .l_bracket) {
+        // todo: handle list
+    }
+
+    if (parser.current_token.token_type == .l_brace) {
+        // todo handle object
+    }
+
+    if (parser.current_token.token_type == .keyword_true) {
+        try parser.advance();
+
+        return ast.Value{
+            .boolean_type = true,
+        };
+    }
+
+    if (parser.current_token.token_type == .keyword_false) {
+        try parser.advance();
+
+        return ast.Value{
+            .boolean_type = false,
+        };
+    }
+
+    if (parser.current_token.token_type == .keyword_null) {
+        try parser.advance();
+
+        return ast.Value{
+            .null_type,
         };
     }
 }
