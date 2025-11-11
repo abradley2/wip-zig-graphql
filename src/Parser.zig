@@ -220,10 +220,39 @@ test "Parse Value" {
         const expected: f64 = 123.0;
         try std.testing.expectEqual(expected, float_value);
     }
+
+    {
+        var lexer: Lexer = .init("-123");
+        var parser: Parser = try .init(&lexer);
+
+        const value = try parseValue(&parser, std.testing.allocator);
+
+        const int_value = switch (value) {
+            .int_type => |v| v,
+            else => return error.ExpectedIntValue,
+        };
+
+        const expected: i64 = -123;
+        try std.testing.expectEqual(expected, int_value);
+    }
+
+    {
+        var lexer: Lexer = .init("\"hello\"");
+        var parser: Parser = try .init(&lexer);
+
+        const value = try parseValue(&parser, std.testing.allocator);
+
+        const string_value = switch (value) {
+            .string_type => |v| v,
+            else => return error.ExpectedStringValue,
+        };
+
+        const expected: []const u8 = "hello";
+        try std.testing.expectEqualStrings(expected, string_value);
+    }
 }
 
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
-    _ = allocator;
     if (parser.current_token.token_type == .number) {
         if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.')) {
             const float_value = std.fmt.parseFloat(f64, parser.current_token.token_text) catch {
@@ -251,10 +280,12 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     }
 
     if (parser.current_token.token_type == .string) {
+        const string_value = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1];
+
         try parser.advance();
 
         return ast.Value{
-            .string_type = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1],
+            .string_type = string_value,
         };
     }
 
@@ -263,7 +294,44 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     }
 
     if (parser.current_token.token_type == .l_brace) {
+        try parser.advance();
+
         // todo handle object
+        var pairs: ArrayList(ast.ValuePair) = .empty;
+
+        while (parser.current_token.token_type != .r_brace) {
+            if (parser.current_token.token_type == .eof) {
+                parser.error_info.wanted = "another object pair or } closing brace";
+                return error.UnexpectedToken;
+            }
+
+            const key_identifier = switch (parser.current_token.token_type) {
+                .identifier => parser.current_token.token_text,
+                else => {
+                    parser.error_info.wanted = "identifier key for object key/value pair";
+                    return error.UnexpectedToken;
+                },
+            };
+
+            try parser.advance();
+
+            if (parser.current_token.token_type == .colon) {
+                try parser.advance();
+            } else {
+                parser.error_info.wanted = "colon seperator for object key/value pair";
+                return error.UnexpectedToken;
+            }
+
+            const value = try parseValue(parser, allocator);
+
+            try pairs.append(allocator, .{ .key = key_identifier, .value = value });
+        }
+
+        try parser.advance();
+
+        return ast.Value{
+            .object_type = pairs.items,
+        };
     }
 
     if (parser.current_token.token_type == .keyword_true) {

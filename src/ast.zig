@@ -75,7 +75,7 @@ pub const ValueType: type = enum {
     list_type,
 };
 
-const ValuePair: type = struct {
+pub const ValuePair: type = struct {
     key: []const u8,
     value: Value,
 };
