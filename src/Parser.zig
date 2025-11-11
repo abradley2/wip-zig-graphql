@@ -137,6 +137,31 @@ fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeR
     return try implement_type_refs.toOwnedSlice(allocator);
 }
 
+test "Parse Argument Definitions" {
+    {
+        const input = "subtaskId: String!, filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3]";
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const argument_definitions = try parseArgumentDefinitions(&parser, std.testing.allocator);
+        defer {
+            for (argument_definitions) |argument_definition| {
+                destroyArgumentDefinition(argument_definition, std.testing.allocator);
+            }
+            std.testing.allocator.free(argument_definitions);
+        }
+
+        try std.testing.expectEqual(3, argument_definitions.len);
+    }
+}
+
+pub fn destroyArgumentDefinition(argument_definition: ast.ArgumentDefinition, allocator: Allocator) void {
+    if (argument_definition.default) |value| {
+        destroyValue(value, allocator);
+    }
+    destroyNamedType(argument_definition.named_type, allocator);
+}
+
 fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.ArgumentDefinition {
     var argument_definitions: ArrayList(ast.ArgumentDefinition) = .empty;
     errdefer argument_definitions.deinit(allocator);
@@ -160,7 +185,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
         }
 
         const named_type = try parseNamedType(parser, allocator);
-        errdefer destroyNamedType(named_type);
+        errdefer destroyNamedType(named_type, allocator);
 
         var default_value: ?ast.Value = null;
         if (parser.current_token.token_type == .equals) {
@@ -174,6 +199,13 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
             .name = argument_name,
             .named_type = named_type,
         });
+
+        if (parser.current_token.token_type == .comma) {
+            try parser.advance();
+            continue;
+        }
+
+        break;
     }
 
     return try argument_definitions.toOwnedSlice(allocator);
@@ -358,6 +390,39 @@ test "Parse Value" {
 
         std.testing.allocator.free(object_value);
     }
+
+    {
+        var lexer: Lexer = .init("[1, 2, 3]");
+        var parser: Parser = try .init(&lexer);
+
+        const value = try parseValue(&parser, std.testing.allocator);
+
+        const list_value = switch (value) {
+            .list_type => |v| v,
+            else => return error.ExpectedListValue,
+        };
+
+        try std.testing.expectEqual(3, list_value.len);
+        destroyValue(value, std.testing.allocator);
+    }
+}
+
+fn destroyValue(value: ast.Value, allocator: Allocator) void {
+    switch (value) {
+        .list_type => |list| {
+            for (list) |sub_value| {
+                destroyValue(sub_value, allocator);
+            }
+            allocator.free(list);
+        },
+        .object_type => |obj| {
+            for (obj) |pair| {
+                destroyValue(pair.value, allocator);
+            }
+            allocator.free(obj);
+        },
+        else => {},
+    }
 }
 
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
@@ -405,14 +470,17 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
         while (parser.current_token.token_type != .r_bracket) {
             const value = try parseValue(parser, allocator);
+            errdefer destroyValue(value, allocator);
 
             try values.append(allocator, value);
 
             if (parser.current_token.token_type == .comma) {
+                try parser.advance();
                 continue;
             }
 
             if (parser.current_token.token_type == .r_bracket) {
+                try parser.advance();
                 break;
             }
 
