@@ -50,7 +50,7 @@ fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.Schema
         try schema_declarations.append(allocator, schema_declaration);
     }
 
-    return schema_declarations.items;
+    return try schema_declarations.toOwnedSlice(allocator);
 }
 
 test "Parse Schema Declaration" {
@@ -183,7 +183,7 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
 
     var fields: ArrayList(ast.Field) = .empty;
     errdefer {
-        if (fields.items.len > 0) allocator.free(fields.items);
+        if (fields.items.len > 0) fields.deinit(allocator);
     }
 
     while (parser.current_token.token_type != .r_brace) {
@@ -200,7 +200,7 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
     return ast.Object{
         .directives = &[_]ast.Directive{},
         .implements = &[_][]const u8{},
-        .fields = fields.items,
+        .fields = try fields.toOwnedSlice(allocator),
         .kind = object_kind,
     };
 }
@@ -250,6 +250,22 @@ test "Parse Value" {
         const expected: []const u8 = "hello";
         try std.testing.expectEqualStrings(expected, string_value);
     }
+
+    {
+        var lexer: Lexer = .init("{ hello: \"World\" }");
+        var parser: Parser = try .init(&lexer);
+
+        const value = try parseValue(&parser, std.testing.allocator);
+
+        const object_value = switch (value) {
+            .object_type => |v| v,
+            else => return error.ExpectedObjectValue,
+        };
+
+        try std.testing.expectEqual(1, object_value.len);
+
+        std.testing.allocator.free(object_value);
+    }
 }
 
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
@@ -290,21 +306,39 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     }
 
     if (parser.current_token.token_type == .l_bracket) {
-        // todo: handle list
+        try parser.advance();
+
+        var values: ArrayList(ast.Value) = .empty;
+        errdefer values.deinit(allocator);
+
+        while (parser.current_token.token_type != .r_bracket) {
+            const value = try parseValue(parser, allocator);
+
+            try values.append(allocator, value);
+
+            if (parser.current_token.token_type == .comma) {
+                continue;
+            }
+
+            if (parser.current_token.token_type == .r_bracket) {
+                break;
+            }
+
+            parser.error_info.wanted = "expected either comma ',' followed by another item, or ending bracket ]";
+            return error.UnexpectedToken;
+        }
+
+        return ast.Value{
+            .list_type = try values.toOwnedSlice(allocator),
+        };
     }
 
     if (parser.current_token.token_type == .l_brace) {
         try parser.advance();
 
-        // todo handle object
         var pairs: ArrayList(ast.ValuePair) = .empty;
 
         while (parser.current_token.token_type != .r_brace) {
-            if (parser.current_token.token_type == .eof) {
-                parser.error_info.wanted = "another object pair or } closing brace";
-                return error.UnexpectedToken;
-            }
-
             const key_identifier = switch (parser.current_token.token_type) {
                 .identifier => parser.current_token.token_text,
                 else => {
@@ -325,12 +359,23 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
             const value = try parseValue(parser, allocator);
 
             try pairs.append(allocator, .{ .key = key_identifier, .value = value });
+
+            if (parser.current_token.token_type == .comma) {
+                try parser.advance();
+                continue;
+            }
+
+            if (parser.current_token.token_type == .r_brace) {
+                try parser.advance();
+                break;
+            }
+
+            parser.error_info.wanted = "either comma , followed by another pair, or ending } brace";
+            return error.UnexpectedToken;
         }
 
-        try parser.advance();
-
         return ast.Value{
-            .object_type = pairs.items,
+            .object_type = try pairs.toOwnedSlice(allocator),
         };
     }
 
