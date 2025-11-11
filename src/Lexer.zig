@@ -198,6 +198,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
         '|' => .pipe,
         '!' => .ex_mark,
         '&' => .ampersand,
+        '=' => .equals,
         0x00 => .eof,
         else => if (isIdentifier(lexer.current_char, 0))
             .identifier

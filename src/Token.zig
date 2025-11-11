@@ -18,6 +18,7 @@ pub const TokenType: type = enum(u8) {
     pipe,
     ex_mark,
     ampersand,
+    equals,
 
     // literals and identifiers
     identifier,

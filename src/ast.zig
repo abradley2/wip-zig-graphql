@@ -1,3 +1,6 @@
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+
 pub const SchemaDocument: type = []SchemaDeclaration;
 
 pub const SchemaDeclaration: type = union(enum) {
@@ -7,7 +10,7 @@ pub const SchemaDeclaration: type = union(enum) {
 
 pub const DirectiveDeclaration: type = struct {
     name: []const u8,
-    arguments: []Argument,
+    arguments: []ArgumentDefinition,
     targets: []DirectiveTarget,
 };
 
@@ -40,7 +43,7 @@ pub const Object: type = struct {
 
 pub const NamedTypeRef: type = []const u8;
 
-pub const Argument: type = struct {
+pub const ArgumentDefinition: type = struct {
     name: []const u8,
     named_type: NamedType,
     default: ?Value,
@@ -48,13 +51,13 @@ pub const Argument: type = struct {
 
 pub const Directive: type = struct {
     name: []const u8,
-    arguments: []Argument,
+    arguments: []ArgumentDefinition,
 };
 
 pub const Field: type = struct {
     name: []const u8,
     field_type: NamedType,
-    arguments: []Argument,
+    arguments: []ArgumentDefinition,
     directives: []Directive,
 };
 

@@ -137,6 +137,48 @@ fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeR
     return try implement_type_refs.toOwnedSlice(allocator);
 }
 
+fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.ArgumentDefinition {
+    var argument_definitions: ArrayList(ast.ArgumentDefinition) = .empty;
+    errdefer argument_definitions.deinit(allocator);
+
+    while (true) {
+        const argument_name = switch (parser.current_token.token_type) {
+            .identifier => parser.current_token.token_text,
+            else => {
+                parser.error_info.wanted = "name for argument definition";
+                return error.UnexpectedToken;
+            },
+        };
+
+        try parser.advance();
+
+        if (parser.current_token.token_type == .colon) {
+            try parser.advance();
+        } else {
+            parser.error_info.wanted = "colon : following argument name";
+            return error.UnexpectedToken;
+        }
+
+        const named_type = try parseNamedType(parser, allocator);
+        errdefer destroyNamedType(named_type);
+
+        var default_value: ?ast.Value = null;
+        if (parser.current_token.token_type == .equals) {
+            try parser.advance();
+
+            default_value = try parseValue(parser, allocator);
+        }
+
+        try argument_definitions.append(allocator, ast.ArgumentDefinition{
+            .default = default_value,
+            .name = argument_name,
+            .named_type = named_type,
+        });
+    }
+
+    return try argument_definitions.toOwnedSlice(allocator);
+}
+
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
     const declaration_token = parser.current_token;
 
@@ -511,7 +553,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     return ast.Field{
         .name = field_name,
         .field_type = named_type,
-        .arguments = &[_]ast.Argument{},
+        .arguments = &[_]ast.ArgumentDefinition{},
         .directives = &[_]ast.Directive{},
     };
 }
@@ -568,4 +610,11 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
         .is_nullable = nullable,
         .type_ref = type_ref,
     };
+}
+
+pub fn destroyNamedType(named_type: ast.NamedType, allocator: Allocator) void {
+    if (named_type.child) |child| {
+        destroyNamedType(child.*, allocator);
+        allocator.destroy(child);
+    }
 }
