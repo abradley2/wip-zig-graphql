@@ -16,6 +16,8 @@ pub const DirectiveTarget: type = []const u8;
 pub const TypeDeclaration: type = struct {
     type_ref: NamedTypeRef,
     graphql_type: GraphQlType,
+    implements: ?[]NamedTypeRef,
+    directives: []Directive,
 };
 
 pub const GraphQlType: type = union(enum) {
@@ -33,8 +35,6 @@ pub const ObjectKind: type = enum {
 
 pub const Object: type = struct {
     kind: ObjectKind,
-    implements: []NamedTypeRef,
-    directives: []Directive,
     fields: []Field,
 };
 

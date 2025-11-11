@@ -82,6 +82,61 @@ test "Parse Schema Declaration" {
     }
 }
 
+test "Parse Implements" {
+    {
+        const input = "TypeOne & TypeTwo";
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const implement_type_refs = try parseImplements(&parser, std.testing.allocator);
+        defer std.testing.allocator.free(implement_type_refs);
+
+        try std.testing.expectEqual(2, implement_type_refs.len);
+        try std.testing.expectEqualStrings("TypeOne", implement_type_refs[0]);
+        try std.testing.expectEqualStrings("TypeTwo", implement_type_refs[1]);
+    }
+
+    {
+        const input = "TypeOne";
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const implement_type_refs = try parseImplements(&parser, std.testing.allocator);
+        defer std.testing.allocator.free(implement_type_refs);
+
+        try std.testing.expectEqual(1, implement_type_refs.len);
+        try std.testing.expectEqualStrings("TypeOne", implement_type_refs[0]);
+    }
+}
+
+fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeRef {
+    var implement_type_refs: ArrayList(ast.NamedTypeRef) = .empty;
+    errdefer implement_type_refs.deinit(allocator);
+
+    while (true) {
+        const type_ref_name = switch (parser.current_token.token_type) {
+            .identifier => parser.current_token.token_text,
+            else => {
+                parser.error_info.wanted = "named type ref to implement";
+                return error.UnexpectedToken;
+            },
+        };
+
+        try implement_type_refs.append(allocator, type_ref_name);
+
+        try parser.advance();
+
+        if (parser.current_token.token_type == .ampersand) {
+            try parser.advance();
+            continue;
+        }
+
+        break;
+    }
+
+    return try implement_type_refs.toOwnedSlice(allocator);
+}
+
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
     const declaration_token = parser.current_token;
 
@@ -92,6 +147,11 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             var object_kind: ast.ObjectKind = .default_type;
             if (declaration_token.token_type == .keyword_input) object_kind = .input_type;
             if (declaration_token.token_type == .keyword_interface) object_kind = .interface_type;
+
+            var implements: ?[]ast.NamedTypeRef = null;
+            if (object_kind == .default_type and parser.peek_token.token_type == .keyword_implements) {
+                implements = try parseImplements(parser, allocator);
+            }
 
             const object = try parseObject(parser, allocator, object_kind);
             _ = object;
@@ -111,6 +171,8 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 .type_delcaration = ast.TypeDeclaration{
                     .type_ref = identifier,
                     .graphql_type = .scalar_type,
+                    .implements = &[_]ast.NamedTypeRef{},
+                    .directives = &[_]ast.Directive{},
                 },
             };
         },
@@ -164,16 +226,6 @@ test "Parse Object" {
 }
 
 fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKind) Error!ast.Object {
-    if (parser.current_token.token_type == .keyword_implements) {
-        // todo handle implements
-    }
-
-    if (parser.current_token.token_type == .at_sign and
-        parser.peek_token.token_type == .identifier)
-    {
-        // todo handle directives
-    }
-
     if (parser.current_token.token_type == .l_brace) {
         try parser.advance();
     } else {
@@ -198,8 +250,6 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
     try parser.advance();
 
     return ast.Object{
-        .directives = &[_]ast.Directive{},
-        .implements = &[_][]const u8{},
         .fields = try fields.toOwnedSlice(allocator),
         .kind = object_kind,
     };

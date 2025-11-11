@@ -197,6 +197,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
         '"' => .string,
         '|' => .pipe,
         '!' => .ex_mark,
+        '&' => .ampersand,
         0x00 => .eof,
         else => if (isIdentifier(lexer.current_char, 0))
             .identifier
@@ -234,6 +235,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
             .{ "true", TokenType.keyword_true },
             .{ "false", TokenType.keyword_false },
             .{ "null", TokenType.keyword_null },
+            .{ "schema", TokenType.keyword_schema },
         });
 
         if (keyword_map.get(token.token_text)) |keyword_token_type| {

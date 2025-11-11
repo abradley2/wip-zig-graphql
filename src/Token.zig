@@ -17,6 +17,7 @@ pub const TokenType: type = enum(u8) {
     at_sign,
     pipe,
     ex_mark,
+    ampersand,
 
     // literals and identifiers
     identifier,
@@ -33,6 +34,7 @@ pub const TokenType: type = enum(u8) {
     keyword_query,
     keyword_mutation,
     keyword_subscription,
+    keyword_schema,
     keyword_on,
     keyword_implements,
     keyword_true,
