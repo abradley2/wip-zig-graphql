@@ -401,7 +401,7 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
         return .null_type;
     }
 
-    parser.error_info.wanted = "float, bool, null, string, array or object value";
+    parser.error_info.wanted = "float, bool, null, string, list or object value";
     return error.UnexpectedToken;
 }
 
