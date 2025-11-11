@@ -205,10 +205,27 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
     };
 }
 
+test "Parse Value" {
+    {
+        var lexer: Lexer = .init("123.0");
+        var parser: Parser = try .init(&lexer);
+
+        const value = try parseValue(&parser, std.testing.allocator);
+
+        const float_value = switch (value) {
+            .float_type => |v| v,
+            else => return error.ExpectedFloatValue,
+        };
+
+        const expected: f64 = 123.0;
+        try std.testing.expectEqual(expected, float_value);
+    }
+}
+
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     _ = allocator;
     if (parser.current_token.token_type == .number) {
-        if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, '.')) {
+        if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.')) {
             const float_value = std.fmt.parseFloat(f64, parser.current_token.token_text) catch {
                 parser.error_info.wanted = "floating point number";
                 return error.UnexpectedToken;
@@ -268,10 +285,11 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     if (parser.current_token.token_type == .keyword_null) {
         try parser.advance();
 
-        return ast.Value{
-            .null_type,
-        };
+        return .null_type;
     }
+
+    parser.error_info.wanted = "float, bool, null, string, array or object value";
+    return error.UnexpectedToken;
 }
 
 test "Parse Field" {
