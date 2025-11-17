@@ -567,7 +567,7 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
 test "Parse Field" {
     {
-        const input = "hello: [World]";
+        const input = "hello(argA: String): [World]";
 
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
@@ -579,6 +579,12 @@ test "Parse Field" {
                 std.debug.print("At: {d}\n", .{parser.lexer.read_position});
             }
             return err;
+        };
+
+        defer std.testing.allocator.free(field.arguments);
+
+        defer for (field.arguments) |argument_definition| {
+            destroyArgumentDefinition(argument_definition, std.testing.allocator);
         };
 
         try std.testing.expectEqual(true, field.field_type.is_list);
@@ -601,8 +607,25 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     try parser.advance();
 
+    var argument_definitions: []ast.ArgumentDefinition = undefined;
+    errdefer {
+        for (argument_definitions) |argument_definition| {
+            destroyArgumentDefinition(argument_definition, allocator);
+        }
+        if (argument_definitions.len > 0) allocator.free(argument_definitions);
+    }
+
     if (parser.current_token.token_type == .l_paren) {
+        try parser.advance();
         // handle arguments
+        argument_definitions = try parseArgumentDefinitions(parser, allocator);
+
+        if (parser.current_token.token_type == .r_paren) {
+            try parser.advance();
+        } else {
+            parser.error_info.wanted = "Closing ) for field arguments";
+            return error.UnexpectedToken;
+        }
     }
 
     if (parser.current_token.token_type == .colon) {
@@ -621,7 +644,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     return ast.Field{
         .name = field_name,
         .field_type = named_type,
-        .arguments = &[_]ast.ArgumentDefinition{},
+        .arguments = argument_definitions,
         .directives = &[_]ast.Directive{},
     };
 }
