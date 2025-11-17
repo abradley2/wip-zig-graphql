@@ -567,6 +567,35 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
 test "Parse Field" {
     {
+        const input = "hello: [World]";
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const field = parser.parseField(std.testing.allocator) catch |err| {
+            if (err == Parser.ParserError.UnexpectedToken) {
+                std.debug.print("Error: wanted {s}\n", .{parser.error_info.wanted});
+                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
+                std.debug.print("At: {d}\n", .{parser.lexer.read_position});
+            }
+            return err;
+        };
+
+        defer std.testing.allocator.free(field.arguments);
+
+        defer for (field.arguments) |argument_definition| {
+            destroyArgumentDefinition(argument_definition, std.testing.allocator);
+        };
+
+        try std.testing.expectEqual(true, field.field_type.is_list);
+        const child = field.field_type.child orelse return error.ExpectedChild;
+        defer std.testing.allocator.destroy(child);
+
+        const child_name = child.type_ref orelse return error.ExpectedNamedChild;
+        try std.testing.expectEqualStrings("World", child_name);
+    }
+
+    {
         const input = "hello(argA: String): [World]";
 
         var lexer: Lexer = .init(input);
@@ -596,6 +625,8 @@ test "Parse Field" {
     }
 }
 
+const empty_argument_definitions: [0]ast.ArgumentDefinition = .{};
+
 fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const field_name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
@@ -607,7 +638,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     try parser.advance();
 
-    var argument_definitions: []ast.ArgumentDefinition = undefined;
+    var argument_definitions: []ast.ArgumentDefinition = &empty_argument_definitions;
     errdefer {
         for (argument_definitions) |argument_definition| {
             destroyArgumentDefinition(argument_definition, allocator);
