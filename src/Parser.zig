@@ -680,6 +680,33 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     };
 }
 
+fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
+    if (parser.current_token.token_type == .at_sign) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "@ symbol before directive";
+        return error.UnexpectedToken;
+    }
+
+    const directive_ident = switch (parser.current_token.token_type) {
+        .identifier => parser.current_token.token_text,
+        else => {
+            parser.error_info.wanted = "identifier for directive following the @ symbol";
+            return error.UnexpectedToken;
+        },
+    };
+
+    try parser.advance();
+
+    const arguments: ?[]ast.ArgumentDefinition = null;
+    if (parser.peek_token.token_type == .l_paren) {
+        // TODO: parse applied arguments
+        _ = arguments;
+        _ = allocator;
+        _ = directive_ident;
+    }
+}
+
 fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
     if (parser.current_token.token_type == .l_bracket) {
         try parser.advance();
