@@ -499,24 +499,7 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
         var pairs: ArrayList(ast.ValuePair) = .empty;
 
         while (parser.current_token.token_type != .r_brace) {
-            const key_identifier = switch (parser.current_token.token_type) {
-                .identifier => parser.current_token.token_text,
-                else => {
-                    parser.error_info.wanted = "identifier key for object key/value pair";
-                    return error.UnexpectedToken;
-                },
-            };
-
-            try parser.advance();
-
-            if (parser.current_token.token_type == .colon) {
-                try parser.advance();
-            } else {
-                parser.error_info.wanted = "colon seperator for object key/value pair";
-                return error.UnexpectedToken;
-            }
-
-            const value = try parseValue(parser, allocator);
+            const key_identifier, const value = try parseValuePair(parser, allocator);
 
             try pairs.append(allocator, .{ .key = key_identifier, .value = value });
 
@@ -563,6 +546,29 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
     parser.error_info.wanted = "float, bool, null, string, list or object value";
     return error.UnexpectedToken;
+}
+
+pub fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
+    const key_identifier = switch (parser.current_token.token_type) {
+        .identifier => parser.current_token.token_text,
+        else => {
+            parser.error_info.wanted = "identifier key for object key/value pair";
+            return error.UnexpectedToken;
+        },
+    };
+
+    try parser.advance();
+
+    if (parser.current_token.token_type == .colon) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "colon seperator for object key/value pair";
+        return error.UnexpectedToken;
+    }
+
+    const value = try parseValue(parser, allocator);
+
+    return .{ key_identifier, value };
 }
 
 test "Parse Field" {
@@ -698,7 +704,7 @@ fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
 
     try parser.advance();
 
-    const arguments: ?[]ast.ArgumentDefinition = null;
+    const arguments: ?[]ast.ValuePair = null;
     if (parser.peek_token.token_type == .l_paren) {
         // TODO: parse applied arguments
         _ = arguments;
