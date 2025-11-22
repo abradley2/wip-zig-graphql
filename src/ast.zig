@@ -57,8 +57,8 @@ pub const Directive: type = struct {
 pub const Field: type = struct {
     name: []const u8,
     field_type: NamedType,
-    arguments: []ArgumentDefinition,
-    directives: []Directive,
+    arguments: ?[]ArgumentDefinition,
+    directives: ?[]Directive,
 };
 
 pub const NamedType: type = struct {

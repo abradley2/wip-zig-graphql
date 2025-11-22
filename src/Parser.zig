@@ -59,13 +59,7 @@ test "Parse Schema Declaration" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const schema_decl = (parseSchemaDeclaration(&parser, std.testing.allocator) catch |err| {
-            if (err == Parser.ParserError.UnexpectedToken) {
-                std.debug.print("Parser error, wanted: {s}\n", .{parser.error_info.wanted});
-                std.debug.print("But got: {s}\n", .{parser.current_token.token_text});
-            }
-            return err;
-        });
+        const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
 
         const graph_type = switch (schema_decl) {
             .type_delcaration => |v| v,
@@ -153,13 +147,6 @@ test "Parse Argument Definitions" {
 
         try std.testing.expectEqual(3, argument_definitions.len);
     }
-}
-
-pub fn destroyArgumentDefinition(argument_definition: ast.ArgumentDefinition, allocator: Allocator) void {
-    if (argument_definition.default) |value| {
-        destroyValue(value, allocator);
-    }
-    destroyNamedType(argument_definition.named_type, allocator);
 }
 
 fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.ArgumentDefinition {
@@ -276,14 +263,7 @@ test "Parse Object" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const object = parseObject(&parser, std.testing.allocator, .default_type) catch |err| {
-            if (err == error.UnexpectedToken) {
-                std.debug.print("Wanted: {s}\n", .{parser.error_info.wanted});
-                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
-                std.debug.print("At: {d}\n", .{parser.lexer.position});
-            }
-            return err;
-        };
+        const object = try parseObject(&parser, std.testing.allocator, .default_type);
 
         try std.testing.expectEqual(2, object.fields.len);
         try std.testing.expectEqualStrings("a", object.fields[0].name);
@@ -561,26 +541,14 @@ test "Parse Field" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const field = parser.parseField(std.testing.allocator) catch |err| {
-            if (err == Parser.ParserError.UnexpectedToken) {
-                std.debug.print("Error: wanted {s}\n", .{parser.error_info.wanted});
-                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
-                std.debug.print("At: {d}\n", .{parser.lexer.read_position});
-            }
-            return err;
-        };
+        const field = try parser.parseField(std.testing.allocator);
 
-        defer std.testing.allocator.free(field.arguments);
-
-        defer for (field.arguments) |argument_definition| {
-            destroyArgumentDefinition(argument_definition, std.testing.allocator);
-        };
+        defer destroyField(field, std.testing.allocator);
 
         try std.testing.expectEqual(true, field.field_type.is_list);
-        const child = field.field_type.child orelse return error.ExpectedChild;
-        defer std.testing.allocator.destroy(child);
+        const child = field.field_type.child orelse return error.UnexpectedNull;
 
-        const child_name = child.type_ref orelse return error.ExpectedNamedChild;
+        const child_name = child.type_ref orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
     }
 
@@ -590,27 +558,37 @@ test "Parse Field" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const field = parser.parseField(std.testing.allocator) catch |err| {
-            if (err == Parser.ParserError.UnexpectedToken) {
-                std.debug.print("Error: wanted {s}\n", .{parser.error_info.wanted});
-                std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
-                std.debug.print("At: {d}\n", .{parser.lexer.read_position});
-            }
-            return err;
-        };
-
-        defer std.testing.allocator.free(field.arguments);
-
-        defer for (field.arguments) |argument_definition| {
-            destroyArgumentDefinition(argument_definition, std.testing.allocator);
-        };
+        const field = try parser.parseField(std.testing.allocator);
+        defer destroyField(field, std.testing.allocator);
 
         try std.testing.expectEqual(true, field.field_type.is_list);
-        const child = field.field_type.child orelse return error.ExpectedChild;
-        defer std.testing.allocator.destroy(child);
+        const child = field.field_type.child orelse return error.UnexpectedNull;
 
-        const child_name = child.type_ref orelse return error.ExpectedNamedChild;
+        const child_name = child.type_ref orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
+    }
+
+    {
+        const input =
+            \\hello(argA: String): [World]
+            \\@directive_one(foo: "bar")
+            \\@directive_two
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const field = try parser.parseField(std.testing.allocator);
+        defer destroyField(field, std.testing.allocator);
+
+        try std.testing.expectEqual(true, field.field_type.is_list);
+        const child = field.field_type.child orelse return error.UnexpectedNull;
+
+        const child_name = child.type_ref orelse return error.UnexpectedNull;
+        try std.testing.expectEqualStrings("World", child_name);
+
+        const directives = field.directives orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(2, directives.len);
     }
 }
 
@@ -627,17 +605,18 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     try parser.advance();
 
-    var argument_definitions: []ast.ArgumentDefinition = &empty_argument_definitions;
+    var argument_definitions: ?[]ast.ArgumentDefinition = null;
     errdefer {
-        for (argument_definitions) |argument_definition| {
-            destroyArgumentDefinition(argument_definition, allocator);
+        if (argument_definitions) |_argument_definitions| {
+            for (_argument_definitions) |argument_definition| {
+                destroyArgumentDefinition(argument_definition, allocator);
+            }
+            allocator.free(_argument_definitions);
         }
-        if (argument_definitions.len > 0) allocator.free(argument_definitions);
     }
 
     if (parser.current_token.token_type == .l_paren) {
         try parser.advance();
-        // handle arguments
         argument_definitions = try parseArgumentDefinitions(parser, allocator);
 
         if (parser.current_token.token_type == .r_paren) {
@@ -656,16 +635,26 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     }
 
     const named_type = try parseNamedType(parser, allocator);
+    errdefer destroyNamedType(named_type, allocator);
 
-    while (parser.peek_token.token_type == .at_sign) {
-        // handle directives
+    var field_directives: ?[]ast.Directive = null;
+    var field_directives_list: ArrayList(ast.Directive) = .empty;
+    defer field_directives_list.deinit(allocator);
+
+    while (parser.current_token.token_type == .at_sign) {
+        const directive = try parseDirective(parser, allocator);
+        try field_directives_list.append(allocator, directive);
+    }
+
+    if (field_directives_list.items.len > 0) {
+        field_directives = try field_directives_list.toOwnedSlice(allocator);
     }
 
     return ast.Field{
         .name = field_name,
         .field_type = named_type,
         .arguments = argument_definitions,
-        .directives = &[_]ast.Directive{},
+        .directives = field_directives,
     };
 }
 
@@ -839,5 +828,28 @@ fn destroyValue(value: ast.Value, allocator: Allocator) void {
             allocator.free(obj);
         },
         else => {},
+    }
+}
+
+fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Allocator) void {
+    if (argument.default) |default_value| {
+        destroyValue(default_value, allocator);
+    }
+    destroyNamedType(argument.named_type, allocator);
+}
+
+fn destroyField(field: ast.Field, allocator: Allocator) void {
+    if (field.arguments) |arguments| {
+        for (arguments) |argument| {
+            destroyArgumentDefinition(argument, allocator);
+        }
+        allocator.free(arguments);
+    }
+    destroyNamedType(field.field_type, allocator);
+    if (field.directives) |directives| {
+        for (directives) |directive| {
+            destroyDirective(directive, allocator);
+        }
+        allocator.free(directives);
     }
 }
