@@ -51,7 +51,7 @@ pub const ArgumentDefinition: type = struct {
 
 pub const Directive: type = struct {
     name: []const u8,
-    arguments: []ValuePair,
+    arguments: ?[]ValuePair,
 };
 
 pub const Field: type = struct {

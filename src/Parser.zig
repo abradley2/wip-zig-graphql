@@ -407,24 +407,6 @@ test "Parse Value" {
     }
 }
 
-fn destroyValue(value: ast.Value, allocator: Allocator) void {
-    switch (value) {
-        .list_type => |list| {
-            for (list) |sub_value| {
-                destroyValue(sub_value, allocator);
-            }
-            allocator.free(list);
-        },
-        .object_type => |obj| {
-            for (obj) |pair| {
-                destroyValue(pair.value, allocator);
-            }
-            allocator.free(obj);
-        },
-        else => {},
-    }
-}
-
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     if (parser.current_token.token_type == .number) {
         if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.')) {
@@ -493,10 +475,11 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
         };
     }
 
+    var pairs: ArrayList(ast.ValuePair) = .empty;
+    errdefer pairs.deinit(allocator);
+
     if (parser.current_token.token_type == .l_brace) {
         try parser.advance();
-
-        var pairs: ArrayList(ast.ValuePair) = .empty;
 
         while (parser.current_token.token_type != .r_brace) {
             const key_identifier, const value = try parseValuePair(parser, allocator);
@@ -686,7 +669,38 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     };
 }
 
-fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
+test "Parse Directive" {
+    {
+        const input =
+            \\ @my_directive(one: 33)
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const directive = try parseDirective(&parser, std.testing.allocator);
+        defer destroyDirective(directive, std.testing.allocator);
+
+        try std.testing.expectEqualStrings("my_directive", directive.name);
+        const arguments = directive.arguments orelse return error.ExpectedNotNull;
+
+        try std.testing.expectEqual(1, arguments.len);
+        try std.testing.expectEqualStrings("one", arguments[0].key);
+        try std.testing.expectEqual(@as(i64, 33), arguments[0].value.int_type);
+    }
+
+    {
+        const input = "@directive_no_arguments";
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const directive = try parseDirective(&parser, std.testing.allocator);
+
+        try std.testing.expectEqualStrings("directive_no_arguments", directive.name);
+    }
+}
+
+fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.Directive {
     if (parser.current_token.token_type == .at_sign) {
         try parser.advance();
     } else {
@@ -704,13 +718,40 @@ fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
 
     try parser.advance();
 
-    const arguments: ?[]ast.ValuePair = null;
-    if (parser.peek_token.token_type == .l_paren) {
-        // TODO: parse applied arguments
-        _ = arguments;
-        _ = allocator;
-        _ = directive_ident;
+    var arguments: ?[]ast.ValuePair = null;
+    var arguments_list: ArrayList(ast.ValuePair) = .empty;
+
+    if (parser.current_token.token_type == .l_paren) {
+        try parser.advance();
+
+        while (true) {
+            const value_ident, const value = try parseValuePair(parser, allocator);
+            try arguments_list.append(allocator, ast.ValuePair{
+                .key = value_ident,
+                .value = value,
+            });
+
+            if (parser.current_token.token_type == .comma) {
+                try parser.advance();
+                continue;
+            }
+
+            if (parser.current_token.token_type == .r_paren) {
+                try parser.advance();
+                break;
+            }
+
+            parser.error_info.wanted = "Either a , before the next item or a ) to close the argument list";
+            return error.UnexpectedToken;
+        }
+
+        arguments = try arguments_list.toOwnedSlice(allocator);
     }
+
+    return ast.Directive{
+        .arguments = arguments,
+        .name = directive_ident,
+    };
 }
 
 fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
@@ -767,9 +808,36 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
     };
 }
 
-pub fn destroyNamedType(named_type: ast.NamedType, allocator: Allocator) void {
+fn destroyDirective(directive: ast.Directive, allocator: Allocator) void {
+    if (directive.arguments) |arguments| {
+        for (arguments) |argument| {
+            destroyValue(argument.value, allocator);
+        }
+        allocator.free(arguments);
+    }
+}
+
+fn destroyNamedType(named_type: ast.NamedType, allocator: Allocator) void {
     if (named_type.child) |child| {
         destroyNamedType(child.*, allocator);
         allocator.destroy(child);
+    }
+}
+
+fn destroyValue(value: ast.Value, allocator: Allocator) void {
+    switch (value) {
+        .list_type => |list| {
+            for (list) |sub_value| {
+                destroyValue(sub_value, allocator);
+            }
+            allocator.free(list);
+        },
+        .object_type => |obj| {
+            for (obj) |pair| {
+                destroyValue(pair.value, allocator);
+            }
+            allocator.free(obj);
+        },
+        else => {},
     }
 }
