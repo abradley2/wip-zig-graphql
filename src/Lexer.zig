@@ -17,6 +17,9 @@ read_position: usize = 0,
 
 current_char: u8 = 0x00,
 
+indent_on_last_read: bool = false,
+newline_on_last_read: bool = false,
+
 test "Lexer Basics" {
     const input = "(hello,world \"again\"}a";
 
@@ -310,10 +313,20 @@ fn advance(lexer: *Lexer) void {
 }
 
 pub fn read(lexer: *Lexer) void {
+    lexer.indent_on_last_read = false;
+    lexer.newline_on_last_read = false;
+
     eat_whitespace: while (true) {
         switch (peekChar(lexer)) {
-            ' ', '\n', '\t', '\r' => {
+            '\n' => {
                 advance(lexer);
+                lexer.indent_on_last_read = true;
+                lexer.newline_on_last_read = true;
+                continue :eat_whitespace;
+            },
+            ' ', '\t', '\r' => {
+                advance(lexer);
+                lexer.indent_on_last_read = true;
                 continue :eat_whitespace;
             },
             else => break :eat_whitespace,

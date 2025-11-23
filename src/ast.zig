@@ -10,8 +10,8 @@ pub const SchemaDeclaration: type = union(enum) {
 
 pub const DirectiveDeclaration: type = struct {
     name: []const u8,
-    arguments: []ArgumentDefinition,
-    targets: []DirectiveTarget,
+    arguments: ?[]ArgumentDefinition,
+    targets: []DirectiveLocation,
 };
 
 pub const DirectiveTarget: type = []const u8;
@@ -66,6 +66,41 @@ pub const NamedType: type = struct {
     is_nullable: bool,
     child: ?*NamedType,
     type_ref: ?NamedTypeRef,
+};
+
+pub const DirectiveLocation: type = enum {
+    QUERY,
+    MUTATION,
+    SUBSCRIPTION,
+    FIELD,
+    FRAGMENT_DEFINITION,
+    FRAGMENT_SPREAD,
+    INLINE_FRAGMENT,
+    VARIABLE_DEFINITION,
+    SCHEMA,
+    SCALAR,
+    OBJECT,
+    FIELD_DEFINITION,
+    ARGUMENT_DEFINITION,
+    INTERFACE,
+    UNION,
+    ENUM,
+    ENUM_VALUE,
+    INPUT_OBJECT,
+    INPUT_FIELD_DEFINITION,
+
+    pub fn fromString(s: []const u8) ?DirectiveLocation {
+        const enum_type = @typeInfo(DirectiveLocation).@"enum";
+
+        comptime var kvs: [enum_type.fields.len]struct { []const u8, DirectiveLocation } = undefined;
+        for (enum_type.fields, 0..) |enum_field, idx| {
+            kvs[idx] = .{ enum_field.name, @as(DirectiveLocation, @enumFromInt(enum_field.value)) };
+        }
+
+        const ssm: std.StaticStringMap(DirectiveLocation) = .initComptime(kvs);
+
+        return ssm.get(s);
+    }
 };
 
 pub const ValueType: type = enum {

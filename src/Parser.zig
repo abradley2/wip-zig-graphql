@@ -252,6 +252,98 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
+fn parseDirectiveDeclaration(allocator: Allocator, parser: *Parser) Error!ast.DirectiveDeclaration {
+    const directive_ident = switch (parser.current_token.token_type) {
+        .identifier => parser.current_token.token_text,
+        else => {
+            parser.error_info.wanted = "Identifier for directive declaration";
+            return error.UnexpectedToken;
+        },
+    };
+
+    parser.advance();
+
+    var argument_definitions: ?[]ast.ArgumentDefinition = null;
+    errdefer {
+        if (argument_definitions) |_argument_definitions| {
+            allocator.free(_argument_definitions);
+        }
+    }
+
+    if (parser.current_token.token_type == .l_paren) {
+        try parser.advance();
+
+        var argument_definition_list: ArrayList(ast.ArgumentDefinition) = .empty;
+        errdefer argument_definition_list.deinit(allocator);
+
+        while (parser.current_token.token_type != .r_paren) {
+            if (parser.current_token.token_type == .eof) {}
+
+            const argument_definition = try parseArgumentDefinitions(parser, allocator);
+            try argument_definition_list.append(allocator, argument_definition);
+
+            if (parser.current_token.token_type == .comma) {
+                try parser.advance();
+                continue;
+            }
+
+            if (parser.lexer.newline_on_last_read) {
+                continue;
+            }
+
+            if (parser.current_token.token_type == .r_paren) {
+                try parser.advance();
+                break;
+            }
+
+            parser.error_info.wanted = "Either a comma or indent before the next argument definition, or a closing ) paren";
+            return error.UnexpectedToken;
+        }
+
+        argument_definitions = try argument_definition_list.toOwnedSlice(allocator);
+    }
+
+    if (parser.current_token.token_type == .keyword_on) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "expecting keyword 'on' followed by valid directive locations";
+        return error.UnexpectedToken;
+    }
+
+    var directive_locations: ArrayList(ast.DirectiveLocation) = .empty;
+    errdefer directive_locations.deinit(allocator);
+
+    while (true) {
+        const directive_location_ident = switch (parser.current_token.token_type) {
+            .identifier => parser.current_token.token_text,
+            else => {
+                parser.error_info.wanted = "Expecting identifier for graphql directive location";
+                return error.UnexpectedToken;
+            },
+        };
+
+        const directive_location = ast.DirectiveLocation.fromString(directive_location_ident) orelse {
+            parser.error_info.wanted = "Matching valid identifier for graphql directive location";
+            return error.UnexpectedToken;
+        };
+
+        try directive_locations.append(allocator, directive_location);
+
+        if (parser.current_token.token_type == .pipe) {
+            try parser.advance();
+            continue;
+        }
+
+        break;
+    }
+
+    return ast.DirectiveDeclaration{
+        .name = directive_ident,
+        .arguments = argument_definitions,
+        .targets = try directive_locations.toOwnedSlice(allocator),
+    };
+}
+
 test "Parse Object" {
     {
         const input =
@@ -591,8 +683,6 @@ test "Parse Field" {
         try std.testing.expectEqual(2, directives.len);
     }
 }
-
-const empty_argument_definitions: [0]ast.ArgumentDefinition = .{};
 
 fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const field_name = switch (parser.current_token.token_type) {
