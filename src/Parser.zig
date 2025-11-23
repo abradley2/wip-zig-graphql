@@ -53,7 +53,7 @@ fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.Schema
     return try schema_declarations.toOwnedSlice(allocator);
 }
 
-test "Parse Schema Declaration" {
+test "parseSchemaDeclaration" {
     {
         const input = "scalar MyScalar";
         var lexer: Lexer = .init(input);
@@ -62,7 +62,7 @@ test "Parse Schema Declaration" {
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
 
         const graph_type = switch (schema_decl) {
-            .type_delcaration => |v| v,
+            .type_declaration => |v| v,
             else => return error.ExpectedGraphType,
         };
 
@@ -99,6 +99,35 @@ test "Parse Schema Declaration" {
             else => return error.UnexpectedValueType,
         };
         try std.testing.expectEqualStrings("No longer supported", default_value_string);
+    }
+
+    {
+        const input =
+            \\type MyType {
+            \\  foo: String
+            \\  bar: Int!
+            \\}
+        ;
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const schema_declaration = try parseSchemaDeclaration(&parser, std.testing.allocator);
+        const type_declaration = switch (schema_declaration) {
+            .type_declaration => |v| v,
+            else => return error.ExpectedTypeDeclaration,
+        };
+        defer destroyTypeDeclaration(type_declaration, std.testing.allocator);
+
+        try std.testing.expectEqualStrings("MyType", type_declaration.type_ref);
+
+        const object = switch (type_declaration.graphql_type) {
+            .object_type => |v| v,
+            else => return error.ExpectedObject,
+        };
+
+        try std.testing.expectEqual(2, object.fields.len);
+        try std.testing.expectEqualStrings("foo", object.fields[0].name);
+        try std.testing.expectEqualStrings("bar", object.fields[1].name);
     }
 }
 
@@ -245,21 +274,64 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     const declaration_token = parser.current_token;
 
     return switch (declaration_token.token_type) {
-        .keyword_type, .keyword_input, .keyword_interface => {
-            try parser.advance();
-
+        .keyword_type, .keyword_input, .keyword_interface, .keyword_schema => {
             var object_kind: ast.ObjectKind = .default_type;
             if (declaration_token.token_type == .keyword_input) object_kind = .input_type;
             if (declaration_token.token_type == .keyword_interface) object_kind = .interface_type;
 
+            try parser.advance();
+
+            const type_identifier = switch (parser.current_token.token_type) {
+                .identifier => parser.current_token.token_text,
+                else => if (declaration_token.token_type == .keyword_schema)
+                    declaration_token.token_text
+                else {
+                    parser.error_info.wanted = "name for type, input, or interface";
+                    return error.UnexpectedToken;
+                },
+            };
+
+            if (declaration_token.token_type != .keyword_schema) {
+                try parser.advance();
+            }
+
             var implements: ?[]ast.NamedTypeRef = null;
-            if (object_kind == .default_type and parser.peek_token.token_type == .keyword_implements) {
+            if (object_kind == .default_type and parser.current_token.token_type == .keyword_implements) {
+                try parser.advance();
+
                 implements = try parseImplements(parser, allocator);
             }
 
+            var directives: ?[]ast.Directive = null;
+            if (parser.current_token.token_type == .at_sign) {
+                var directives_list: ArrayList(ast.Directive) = .empty;
+                errdefer directives_list.deinit(allocator);
+
+                while (true) {
+                    const directive = try parseDirective(parser, allocator);
+                    try directives_list.append(allocator, directive);
+
+                    if (parser.current_token.token_type == .at_sign) {
+                        continue;
+                    }
+
+                    break;
+                }
+                directives = try directives_list.toOwnedSlice(allocator);
+            }
+
             const object = try parseObject(parser, allocator, object_kind);
-            _ = object;
-            return error.NotImplemented;
+
+            return ast.SchemaDeclaration{
+                .type_declaration = ast.TypeDeclaration{
+                    .type_ref = type_identifier,
+                    .graphql_type = .{
+                        .object_type = object,
+                    },
+                    .implements = implements,
+                    .directives = directives,
+                },
+            };
         },
         .keyword_scalar => {
             try parser.advance();
@@ -272,11 +344,11 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             };
 
             return ast.SchemaDeclaration{
-                .type_delcaration = ast.TypeDeclaration{
+                .type_declaration = ast.TypeDeclaration{
                     .type_ref = identifier,
                     .graphql_type = .scalar_type,
-                    .implements = &[_]ast.NamedTypeRef{},
-                    .directives = &[_]ast.Directive{},
+                    .implements = null,
+                    .directives = null,
                 },
             };
         },
@@ -1000,4 +1072,28 @@ fn destroyDirectiveDeclaration(directive_declaration: ast.DirectiveDeclaration, 
     }
 
     allocator.free(directive_declaration.targets);
+}
+
+fn destroyObjectType(object: ast.Object, allocator: Allocator) void {
+    for (object.fields) |field| {
+        destroyField(field, allocator);
+    }
+    allocator.free(object.fields);
+}
+
+fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allocator) void {
+    if (type_declaration.directives) |directives| {
+        for (directives) |directive| {
+            destroyDirective(directive, allocator);
+        }
+        allocator.free(directives);
+    }
+    if (type_declaration.implements) |implements| {
+        allocator.free(implements);
+    }
+    switch (type_declaration.graphql_type) {
+        .scalar_type => {},
+        .object_type => |object| destroyObjectType(object, allocator),
+        else => {},
+    }
 }

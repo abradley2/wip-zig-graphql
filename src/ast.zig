@@ -5,7 +5,7 @@ pub const SchemaDocument: type = []SchemaDeclaration;
 
 pub const SchemaDeclaration: type = union(enum) {
     directive_declaration: DirectiveDeclaration,
-    type_delcaration: TypeDeclaration,
+    type_declaration: TypeDeclaration,
 };
 
 pub const DirectiveDeclaration: type = struct {
@@ -20,7 +20,7 @@ pub const TypeDeclaration: type = struct {
     type_ref: NamedTypeRef,
     graphql_type: GraphQlType,
     implements: ?[]NamedTypeRef,
-    directives: []Directive,
+    directives: ?[]Directive,
 };
 
 pub const GraphQlType: type = union(enum) {
