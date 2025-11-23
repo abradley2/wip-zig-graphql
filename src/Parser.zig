@@ -74,6 +74,32 @@ test "Parse Schema Declaration" {
         try std.testing.expectEqual(true, is_scalar);
         try std.testing.expectEqualStrings("MyScalar", graph_type.type_ref);
     }
+
+    {
+        const input =
+            \\directive @deprecated(
+            \\  reason: String = "No longer supported"
+            \\) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
+        ;
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
+        const directive_declaration = switch (schema_decl) {
+            .directive_declaration => |v| v,
+            else => return error.ExpectedDirectiveDeclaration,
+        };
+        defer destroyDirectiveDeclaration(directive_declaration, std.testing.allocator);
+
+        const arguments = directive_declaration.arguments orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(1, arguments.len);
+        const default_value = arguments[0].default orelse return error.UnexpectedNull;
+        const default_value_string = switch (default_value) {
+            .string_type => |s| s,
+            else => return error.UnexpectedValueType,
+        };
+        try std.testing.expectEqualStrings("No longer supported", default_value_string);
+    }
 }
 
 test "Parse Implements" {
@@ -260,7 +286,10 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
         },
         .keyword_directive => {
             try parser.advance();
-            return error.NotImplemented;
+            const directive_declaration = try parseDirectiveDeclaration(parser, allocator);
+            return ast.SchemaDeclaration{
+                .directive_declaration = directive_declaration,
+            };
         },
         else => {
             parser.error_info.wanted = "type, input, interface, scalar, enum, or directive keyword";
