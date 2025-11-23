@@ -133,7 +133,7 @@ fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeR
 
 test "Parse Argument Definitions" {
     {
-        const input = "subtaskId: String!, filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3]";
+        const input = "(subtaskId: String!, filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3])";
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
@@ -150,6 +150,13 @@ test "Parse Argument Definitions" {
 }
 
 fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.ArgumentDefinition {
+    if (parser.current_token.token_type == .l_paren) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "expected opening paren ( for argument list";
+        return error.UnexpectedToken;
+    }
+
     var argument_definitions: ArrayList(ast.ArgumentDefinition) = .empty;
     errdefer argument_definitions.deinit(allocator);
 
@@ -187,12 +194,22 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
             .named_type = named_type,
         });
 
+        if (parser.current_token.token_type == .r_paren) {
+            try parser.advance();
+            break;
+        }
+
         if (parser.current_token.token_type == .comma) {
             try parser.advance();
             continue;
         }
 
-        break;
+        if (parser.lexer.newline_on_last_read) {
+            continue;
+        }
+
+        parser.error_info.wanted = "Either an indent or a ',' comma followed by another argument, or a closing ) paren";
+        return error.UnexpectedToken;
     }
 
     return try argument_definitions.toOwnedSlice(allocator);
@@ -252,7 +269,43 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
-fn parseDirectiveDeclaration(allocator: Allocator, parser: *Parser) Error!ast.DirectiveDeclaration {
+test "parseDirectiveDeclaration" {
+    {
+        const input =
+            \\@my_directive(
+            \\  arg_one: Boolean
+            \\  arg_two: String, arg_three: [Boolean!]
+            \\) on FIELD_DEFINITION | 
+            \\     ARGUMENT_DEFINITION | 
+            \\     INPUT_FIELD_DEFINITION | ENUM_VALUE
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const directive_declaration = try parseDirectiveDeclaration(&parser, std.testing.allocator);
+        defer destroyDirectiveDeclaration(directive_declaration, std.testing.allocator);
+
+        const argument_definitions = directive_declaration.arguments orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(3, argument_definitions.len);
+
+        try std.testing.expectEqual(4, directive_declaration.targets.len);
+
+        try std.testing.expectEqualStrings("my_directive", directive_declaration.name);
+    }
+}
+
+fn parseDirectiveDeclaration(
+    parser: *Parser,
+    allocator: Allocator,
+) Error!ast.DirectiveDeclaration {
+    if (parser.current_token.token_type == .at_sign) {
+        try parser.advance();
+    } else {
+        parser.error_info.wanted = "an '@' symbol prior to the directive's name";
+        return error.UnexpectedToken;
+    }
+
     const directive_ident = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
         else => {
@@ -261,7 +314,7 @@ fn parseDirectiveDeclaration(allocator: Allocator, parser: *Parser) Error!ast.Di
         },
     };
 
-    parser.advance();
+    try parser.advance();
 
     var argument_definitions: ?[]ast.ArgumentDefinition = null;
     errdefer {
@@ -271,36 +324,7 @@ fn parseDirectiveDeclaration(allocator: Allocator, parser: *Parser) Error!ast.Di
     }
 
     if (parser.current_token.token_type == .l_paren) {
-        try parser.advance();
-
-        var argument_definition_list: ArrayList(ast.ArgumentDefinition) = .empty;
-        errdefer argument_definition_list.deinit(allocator);
-
-        while (parser.current_token.token_type != .r_paren) {
-            if (parser.current_token.token_type == .eof) {}
-
-            const argument_definition = try parseArgumentDefinitions(parser, allocator);
-            try argument_definition_list.append(allocator, argument_definition);
-
-            if (parser.current_token.token_type == .comma) {
-                try parser.advance();
-                continue;
-            }
-
-            if (parser.lexer.newline_on_last_read) {
-                continue;
-            }
-
-            if (parser.current_token.token_type == .r_paren) {
-                try parser.advance();
-                break;
-            }
-
-            parser.error_info.wanted = "Either a comma or indent before the next argument definition, or a closing ) paren";
-            return error.UnexpectedToken;
-        }
-
-        argument_definitions = try argument_definition_list.toOwnedSlice(allocator);
+        argument_definitions = try parseArgumentDefinitions(parser, allocator);
     }
 
     if (parser.current_token.token_type == .keyword_on) {
@@ -321,6 +345,8 @@ fn parseDirectiveDeclaration(allocator: Allocator, parser: *Parser) Error!ast.Di
                 return error.UnexpectedToken;
             },
         };
+
+        try parser.advance();
 
         const directive_location = ast.DirectiveLocation.fromString(directive_location_ident) orelse {
             parser.error_info.wanted = "Matching valid identifier for graphql directive location";
@@ -706,15 +732,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     }
 
     if (parser.current_token.token_type == .l_paren) {
-        try parser.advance();
         argument_definitions = try parseArgumentDefinitions(parser, allocator);
-
-        if (parser.current_token.token_type == .r_paren) {
-            try parser.advance();
-        } else {
-            parser.error_info.wanted = "Closing ) for field arguments";
-            return error.UnexpectedToken;
-        }
     }
 
     if (parser.current_token.token_type == .colon) {
@@ -942,4 +960,15 @@ fn destroyField(field: ast.Field, allocator: Allocator) void {
         }
         allocator.free(directives);
     }
+}
+
+fn destroyDirectiveDeclaration(directive_declaration: ast.DirectiveDeclaration, allocator: Allocator) void {
+    if (directive_declaration.arguments) |arguments| {
+        for (arguments) |argument| {
+            destroyArgumentDefinition(argument, allocator);
+        }
+        allocator.free(arguments);
+    }
+
+    allocator.free(directive_declaration.targets);
 }

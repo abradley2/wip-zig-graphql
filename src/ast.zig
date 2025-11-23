@@ -93,7 +93,7 @@ pub const DirectiveLocation: type = enum {
         const enum_type = @typeInfo(DirectiveLocation).@"enum";
 
         comptime var kvs: [enum_type.fields.len]struct { []const u8, DirectiveLocation } = undefined;
-        for (enum_type.fields, 0..) |enum_field, idx| {
+        inline for (enum_type.fields, 0..) |enum_field, idx| {
             kvs[idx] = .{ enum_field.name, @as(DirectiveLocation, @enumFromInt(enum_field.value)) };
         }
 
