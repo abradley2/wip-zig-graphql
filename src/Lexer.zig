@@ -25,6 +25,9 @@ test "Lexer Basics" {
         \\(hello #some comment
         \\  # another comment
         \\ ,world "again"}a
+        \\"""t
+        \\  the sun says "hello"
+        \\"""
     ;
 
     var lexer: Lexer = .init(input);
@@ -66,6 +69,9 @@ test "Lexer Basics" {
             6 => {
                 try std.testing.expectEqual(TokenType.identifier, token.token_type);
                 try std.testing.expectEqualStrings("a", token.token_text);
+            },
+            7 => {
+                try std.testing.expectEqual(TokenType.string, token.token_type);
             },
             else => return error.ExpectedEof,
         }
@@ -271,8 +277,34 @@ fn readComment(lexer: *Lexer) void {
     lexer.read_position = end + 1;
 }
 
+fn readMultilineString(lexer: *Lexer) error{UnterminatedString}![]const u8 {
+    var quote_count: u8 = 0;
+
+    while (true) {
+        if (lexer.read_position >= lexer.input.len) {
+            return error.UnterminatedString;
+        }
+        if (lexer.input[lexer.read_position] == '"') {
+            quote_count += 1;
+        } else {
+            quote_count = 0;
+        }
+
+        lexer.read_position += 1;
+
+        if (quote_count == 3) {
+            return lexer.input[lexer.position..lexer.read_position];
+        }
+    }
+}
+
 fn readString(lexer: *Lexer) error{UnterminatedString}![]const u8 {
     var end = lexer.read_position;
+
+    if (std.mem.startsWith(u8, lexer.input[lexer.position..], "\"\"\"")) {
+        lexer.read_position += 2;
+        return readMultilineString(lexer);
+    }
 
     var escapeNext = false;
     while (end < lexer.input.len - 1 and
