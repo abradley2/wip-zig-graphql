@@ -256,10 +256,22 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
             default_value = try parseValue(parser, allocator);
         }
 
+        var directives: ?[]ast.Directive = null;
+        if (parser.current_token.token_type == .at_sign) {
+            var directives_list: ArrayList(ast.Directive) = .empty;
+            errdefer directives_list.deinit(allocator);
+            while (parser.current_token.token_type == .at_sign) {
+                const directive = try parseDirective(parser, allocator);
+                try directives_list.append(allocator, directive);
+            }
+            directives = try directives_list.toOwnedSlice(allocator);
+        }
+
         try argument_definitions.append(allocator, ast.ArgumentDefinition{
             .default = default_value,
             .name = argument_name,
             .named_type = named_type,
+            .directives = directives,
         });
 
         if (parser.current_token.token_type == .r_paren) {

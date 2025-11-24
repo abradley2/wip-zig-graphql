@@ -47,6 +47,7 @@ pub const ArgumentDefinition: type = struct {
     name: []const u8,
     named_type: NamedType,
     default: ?Value,
+    directives: ?[]Directive,
 };
 
 pub const Directive: type = struct {
