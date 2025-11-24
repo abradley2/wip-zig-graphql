@@ -21,7 +21,11 @@ indent_on_last_read: bool = false,
 newline_on_last_read: bool = false,
 
 test "Lexer Basics" {
-    const input = "(hello,world \"again\"}a";
+    const input =
+        \\(hello #some comment
+        \\  # another comment
+        \\ ,world "again"}a
+    ;
 
     var lexer: Lexer = .init(input);
 
@@ -185,6 +189,12 @@ pub fn peekToken(lexer: *Lexer) Error!Token {
 pub fn nextToken(lexer: *Lexer) Error!Token {
     var token: Token = .{ .token_type = .unknown };
 
+    while (lexer.current_char == '#') {
+        lexer.readComment();
+        lexer.advance();
+        lexer.read();
+    }
+
     token.token_type = switch (lexer.current_char) {
         '{' => .l_brace,
         '}' => .r_brace,
@@ -248,6 +258,17 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
     }
 
     return token;
+}
+
+fn readComment(lexer: *Lexer) void {
+    var end = lexer.read_position;
+    while (end < lexer.input.len - 1 and
+        lexer.input[end] != '\n')
+    {
+        end += 1;
+    }
+
+    lexer.read_position = end + 1;
 }
 
 fn readString(lexer: *Lexer) error{UnterminatedString}![]const u8 {

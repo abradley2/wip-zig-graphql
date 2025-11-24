@@ -129,9 +129,22 @@ test "parseSchemaDeclaration" {
         try std.testing.expectEqualStrings("foo", object.fields[0].name);
         try std.testing.expectEqualStrings("bar", object.fields[1].name);
     }
+
+    {
+        const input =
+            \\type MyType implements Foo & Bar
+            \\@foo
+            \\@bar(fizz: "buzz")
+            \\{ one: String }
+        ;
+        var lexer: Lexer = .init(input);
+        const parser: Parser = try .init(&lexer);
+
+        _ = parser;
+    }
 }
 
-test "Parse Implements" {
+test "parseImplements" {
     {
         const input = "TypeOne & TypeTwo";
         var lexer: Lexer = .init(input);
@@ -186,7 +199,7 @@ fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeR
     return try implement_type_refs.toOwnedSlice(allocator);
 }
 
-test "Parse Argument Definitions" {
+test "parseArgumentDefinitions" {
     {
         const input = "(subtaskId: String!, filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3])";
         var lexer: Lexer = .init(input);
@@ -471,7 +484,7 @@ fn parseDirectiveDeclaration(
     };
 }
 
-test "Parse Object" {
+test "parseObject" {
     {
         const input =
             \\{
@@ -528,7 +541,7 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
     };
 }
 
-test "Parse Value" {
+test "parseValue" {
     {
         var lexer: Lexer = .init("123.0");
         var parser: Parser = try .init(&lexer);
@@ -753,7 +766,7 @@ pub fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []co
     return .{ key_identifier, value };
 }
 
-test "Parse Field" {
+test "parseField" {
     {
         const input = "hello: [World]";
 
@@ -867,7 +880,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     };
 }
 
-test "Parse Directive" {
+test "parseDirective" {
     {
         const input =
             \\ @my_directive(one: 33)
