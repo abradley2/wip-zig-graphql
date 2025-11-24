@@ -1070,6 +1070,13 @@ fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Alloca
         destroyValue(default_value, allocator);
     }
     destroyNamedType(argument.named_type, allocator);
+
+    if (argument.directives) |directives| {
+        for (directives) |directive| {
+            destroyDirective(directive, allocator);
+        }
+        allocator.free(directives);
+    }
 }
 
 fn destroyField(field: ast.Field, allocator: Allocator) void {
