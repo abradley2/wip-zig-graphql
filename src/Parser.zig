@@ -171,8 +171,8 @@ test "parseImplements" {
     }
 }
 
-fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedTypeRef {
-    var implement_type_refs: ArrayList(ast.NamedTypeRef) = .empty;
+fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedType {
+    var implement_type_refs: ArrayList(ast.NamedType) = .empty;
     errdefer implement_type_refs.deinit(allocator);
 
     while (true) {
@@ -246,8 +246,8 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
             return error.UnexpectedToken;
         }
 
-        const named_type = try parseNamedType(parser, allocator);
-        errdefer destroyNamedType(named_type, allocator);
+        const graphql_type = try parseGraphQlType(parser, allocator);
+        errdefer destroyGraphQlType(graphql_type, allocator);
 
         var default_value: ?ast.Value = null;
         if (parser.current_token.token_type == .equals) {
@@ -270,7 +270,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
         try argument_definitions.append(allocator, ast.ArgumentDefinition{
             .default = default_value,
             .name = argument_name,
-            .named_type = named_type,
+            .graphql_type = graphql_type,
             .directives = directives,
         });
 
@@ -327,7 +327,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 try parser.advance();
             }
 
-            var implements: ?[]ast.NamedTypeRef = null;
+            var implements: ?[]ast.NamedType = null;
             if (object_kind == .default_type and parser.current_token.token_type == .keyword_implements) {
                 try parser.advance();
 
@@ -804,7 +804,7 @@ test "parseField" {
         try std.testing.expectEqual(true, field.field_type.is_list);
         const child = field.field_type.child orelse return error.UnexpectedNull;
 
-        const child_name = child.type_ref orelse return error.UnexpectedNull;
+        const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
     }
 
@@ -820,7 +820,7 @@ test "parseField" {
         try std.testing.expectEqual(true, field.field_type.is_list);
         const child = field.field_type.child orelse return error.UnexpectedNull;
 
-        const child_name = child.type_ref orelse return error.UnexpectedNull;
+        const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
     }
 
@@ -840,7 +840,7 @@ test "parseField" {
         try std.testing.expectEqual(true, field.field_type.is_list);
         const child = field.field_type.child orelse return error.UnexpectedNull;
 
-        const child_name = child.type_ref orelse return error.UnexpectedNull;
+        const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
 
         const directives = field.directives orelse return error.UnexpectedNull;
@@ -880,8 +880,8 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
         return error.UnexpectedToken;
     }
 
-    const named_type = try parseNamedType(parser, allocator);
-    errdefer destroyNamedType(named_type, allocator);
+    const graphql_type = try parseGraphQlType(parser, allocator);
+    errdefer destroyGraphQlType(graphql_type, allocator);
 
     var field_directives: ?[]ast.Directive = null;
     var field_directives_list: ArrayList(ast.Directive) = .empty;
@@ -898,7 +898,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     return ast.Field{
         .name = field_name,
-        .field_type = named_type,
+        .field_type = graphql_type,
         .arguments = argument_definitions,
         .directives = field_directives,
     };
@@ -989,12 +989,12 @@ fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.Directive {
     };
 }
 
-fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
+fn parseGraphQlType(parser: *Parser, allocator: Allocator) Error!ast.GraphQlType {
     if (parser.current_token.token_type == .l_bracket) {
         try parser.advance();
 
-        const child = try allocator.create(ast.NamedType);
-        child.* = try parseNamedType(parser, allocator);
+        const child = try allocator.create(ast.GraphQlType);
+        child.* = try parseGraphQlType(parser, allocator);
         errdefer allocator.destroy(child);
 
         if (parser.current_token.token_type == .r_bracket) {
@@ -1010,15 +1010,15 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
             try parser.advance();
         }
 
-        return ast.NamedType{
+        return ast.GraphQlType{
             .child = child,
             .is_list = true,
             .is_nullable = nullable,
-            .type_ref = null,
+            .named_type = null,
         };
     }
 
-    const type_ref = switch (parser.current_token.token_type) {
+    const named_type = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
         else => {
             parser.error_info.wanted = "identifier for field type";
@@ -1035,11 +1035,11 @@ fn parseNamedType(parser: *Parser, allocator: Allocator) Error!ast.NamedType {
         try parser.advance();
     }
 
-    return ast.NamedType{
+    return ast.GraphQlType{
         .child = null,
         .is_list = false,
         .is_nullable = nullable,
-        .type_ref = type_ref,
+        .named_type = named_type,
     };
 }
 
@@ -1052,9 +1052,9 @@ fn destroyDirective(directive: ast.Directive, allocator: Allocator) void {
     }
 }
 
-fn destroyNamedType(named_type: ast.NamedType, allocator: Allocator) void {
-    if (named_type.child) |child| {
-        destroyNamedType(child.*, allocator);
+fn destroyGraphQlType(graphQlType: ast.GraphQlType, allocator: Allocator) void {
+    if (graphQlType.child) |child| {
+        destroyGraphQlType(child.*, allocator);
         allocator.destroy(child);
     }
 }
@@ -1081,7 +1081,7 @@ fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Alloca
     if (argument.default) |default_value| {
         destroyValue(default_value, allocator);
     }
-    destroyNamedType(argument.named_type, allocator);
+    destroyGraphQlType(argument.graphql_type, allocator);
 
     if (argument.directives) |directives| {
         for (directives) |directive| {
@@ -1098,7 +1098,7 @@ fn destroyField(field: ast.Field, allocator: Allocator) void {
         }
         allocator.free(arguments);
     }
-    destroyNamedType(field.field_type, allocator);
+    destroyGraphQlType(field.field_type, allocator);
     if (field.directives) |directives| {
         for (directives) |directive| {
             destroyDirective(directive, allocator);

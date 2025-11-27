@@ -20,14 +20,14 @@ pub const TypeDeclaration: type = struct {
     extends: bool,
     name: []const u8,
     kind: TypeDeclarationKind,
-    implements: ?[]NamedTypeRef,
+    implements: ?[]NamedType,
     directives: ?[]Directive,
 };
 
 pub const TypeDeclarationKind: type = union(enum) {
     object_type: Object,
     scalar_type: void,
-    union_type: []NamedTypeRef,
+    union_type: []NamedType,
     enum_type: []EnumEntry,
 };
 
@@ -47,11 +47,11 @@ pub const Object: type = struct {
     fields: []Field,
 };
 
-pub const NamedTypeRef: type = []const u8;
+pub const NamedType: type = []const u8;
 
 pub const ArgumentDefinition: type = struct {
     name: []const u8,
-    named_type: NamedType,
+    graphql_type: GraphQlType,
     default: ?Value,
     directives: ?[]Directive,
 };
@@ -63,16 +63,16 @@ pub const Directive: type = struct {
 
 pub const Field: type = struct {
     name: []const u8,
-    field_type: NamedType,
+    field_type: GraphQlType,
     arguments: ?[]ArgumentDefinition,
     directives: ?[]Directive,
 };
 
-pub const NamedType: type = struct {
+pub const GraphQlType: type = struct {
     is_list: bool,
     is_nullable: bool,
-    child: ?*NamedType,
-    type_ref: ?NamedTypeRef,
+    child: ?*GraphQlType,
+    named_type: ?NamedType,
 };
 
 pub const DirectiveLocation: type = enum {
