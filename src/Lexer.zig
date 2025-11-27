@@ -256,6 +256,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
             .{ "false", TokenType.keyword_false },
             .{ "null", TokenType.keyword_null },
             .{ "schema", TokenType.keyword_schema },
+            .{ "extend", TokenType.keyword_extend },
         });
 
         if (keyword_map.get(token.token_text)) |keyword_token_type| {

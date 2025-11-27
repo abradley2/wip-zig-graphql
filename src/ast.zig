@@ -17,17 +17,23 @@ pub const DirectiveDeclaration: type = struct {
 pub const DirectiveTarget: type = []const u8;
 
 pub const TypeDeclaration: type = struct {
-    type_ref: NamedTypeRef,
-    graphql_type: GraphQlType,
+    extends: bool,
+    name: []const u8,
+    kind: TypeDeclarationKind,
     implements: ?[]NamedTypeRef,
     directives: ?[]Directive,
 };
 
-pub const GraphQlType: type = union(enum) {
+pub const TypeDeclarationKind: type = union(enum) {
     object_type: Object,
     scalar_type: void,
     union_type: []NamedTypeRef,
-    enum_type: [][]const u8,
+    enum_type: []EnumEntry,
+};
+
+pub const EnumEntry: type = struct {
+    name: []const u8,
+    directives: ?[]Directive,
 };
 
 pub const ObjectKind: type = enum {

@@ -36,6 +36,7 @@ pub const TokenType: type = enum(u8) {
     keyword_mutation,
     keyword_subscription,
     keyword_schema,
+    keyword_extend,
     keyword_on,
     keyword_implements,
     keyword_true,

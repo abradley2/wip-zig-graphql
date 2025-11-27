@@ -66,13 +66,13 @@ test "parseSchemaDeclaration" {
             else => return error.ExpectedGraphType,
         };
 
-        const is_scalar = switch (graph_type.graphql_type) {
+        const is_scalar = switch (graph_type.kind) {
             .scalar_type => true,
             else => false,
         };
 
         try std.testing.expectEqual(true, is_scalar);
-        try std.testing.expectEqualStrings("MyScalar", graph_type.type_ref);
+        try std.testing.expectEqualStrings("MyScalar", graph_type.name);
     }
 
     {
@@ -118,9 +118,9 @@ test "parseSchemaDeclaration" {
         };
         defer destroyTypeDeclaration(type_declaration, std.testing.allocator);
 
-        try std.testing.expectEqualStrings("MyType", type_declaration.type_ref);
+        try std.testing.expectEqualStrings("MyType", type_declaration.name);
 
-        const object = switch (type_declaration.graphql_type) {
+        const object = switch (type_declaration.kind) {
             .object_type => |v| v,
             else => return error.ExpectedObject,
         };
@@ -296,7 +296,14 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.A
 }
 
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
-    const declaration_token = parser.current_token;
+    var declaration_token = parser.current_token;
+
+    var extends: bool = false;
+    if (declaration_token.token_type == .keyword_extend) {
+        extends = true;
+        try parser.advance();
+        declaration_token = parser.current_token;
+    }
 
     return switch (declaration_token.token_type) {
         .keyword_type, .keyword_input, .keyword_interface, .keyword_schema => {
@@ -349,8 +356,9 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
-                    .type_ref = type_identifier,
-                    .graphql_type = .{
+                    .extends = extends,
+                    .name = type_identifier,
+                    .kind = .{
                         .object_type = object,
                     },
                     .implements = implements,
@@ -370,8 +378,9 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
-                    .type_ref = identifier,
-                    .graphql_type = .scalar_type,
+                    .extends = extends,
+                    .name = identifier,
+                    .kind = .scalar_type,
                     .implements = null,
                     .directives = null,
                 },
@@ -382,6 +391,9 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             return error.NotImplemented;
         },
         .keyword_directive => {
+            if (extends) {
+                return Error.UnexpectedToken;
+            }
             try parser.advance();
             const directive_declaration = try parseDirectiveDeclaration(parser, allocator);
             return ast.SchemaDeclaration{
@@ -1123,7 +1135,7 @@ fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allo
     if (type_declaration.implements) |implements| {
         allocator.free(implements);
     }
-    switch (type_declaration.graphql_type) {
+    switch (type_declaration.kind) {
         .scalar_type => {},
         .object_type => |object| destroyObjectType(object, allocator),
         else => {},
