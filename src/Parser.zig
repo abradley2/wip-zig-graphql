@@ -263,16 +263,8 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
             default_value = try parseValue(parser, allocator);
         }
 
-        var directives: ?[]ast.Directive = null;
-        if (parser.current_token.token_type == .at_sign) {
-            var directives_list: ArrayList(ast.Directive) = .empty;
-            errdefer directives_list.deinit(allocator);
-            while (parser.current_token.token_type == .at_sign) {
-                const directive = try parseDirective(parser, allocator);
-                try directives_list.append(allocator, directive);
-            }
-            directives = try directives_list.toOwnedSlice(allocator);
-        }
+        const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
+        errdefer if (directives) |_directives| for (_directives) |d| destroyDirective(d, allocator);
 
         try argument_definitions.append(allocator, ast.ArgumentDefinition{
             .default = default_value,
@@ -337,23 +329,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 implements = try parseImplements(parser, allocator);
             }
 
-            var directives: ?[]ast.Directive = null;
-            if (parser.current_token.token_type == .at_sign) {
-                var directives_list: ArrayList(ast.Directive) = .empty;
-                errdefer directives_list.deinit(allocator);
-
-                while (true) {
-                    const directive = try parseDirective(parser, allocator);
-                    try directives_list.append(allocator, directive);
-
-                    if (parser.current_token.token_type == .at_sign) {
-                        continue;
-                    }
-
-                    break;
-                }
-                directives = try directives_list.toOwnedSlice(allocator);
-            }
+            const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
             const object_definition = try parseObject(parser, allocator);
 
@@ -881,24 +857,13 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const graphql_type = try parseGraphQlType(parser, allocator);
     errdefer destroyGraphQlType(graphql_type, allocator);
 
-    var field_directives: ?[]ast.Directive = null;
-    var field_directives_list: ArrayList(ast.Directive) = .empty;
-    defer field_directives_list.deinit(allocator);
-
-    while (parser.current_token.token_type == .at_sign) {
-        const directive = try parseDirective(parser, allocator);
-        try field_directives_list.append(allocator, directive);
-    }
-
-    if (field_directives_list.items.len > 0) {
-        field_directives = try field_directives_list.toOwnedSlice(allocator);
-    }
+    const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
     return ast.Field{
         .name = field_name,
         .graphql_type = graphql_type,
         .arguments = argument_definitions,
-        .directives = field_directives,
+        .directives = directives,
     };
 }
 
@@ -911,7 +876,9 @@ test "parseDirective" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const directive = try parseDirective(&parser, std.testing.allocator);
+        const directive = (try parseDirective(&parser, std.testing.allocator)) orelse
+            return error.UnexpectedNull;
+
         defer destroyDirective(directive, std.testing.allocator);
 
         try std.testing.expectEqualStrings("my_directive", directive.name);
@@ -927,18 +894,33 @@ test "parseDirective" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const directive = try parseDirective(&parser, std.testing.allocator);
+        const directive = (try parseDirective(&parser, std.testing.allocator)) orelse
+            return error.UnexpectedNull;
 
         try std.testing.expectEqualStrings("directive_no_arguments", directive.name);
     }
 }
 
-fn parseDirective(parser: *Parser, allocator: Allocator) Error!ast.Directive {
+fn parseDirectives(parser: *Parser, allocator: Allocator) Error!?[]ast.Directive {
+    if (parser.current_token.token_type != .at_sign) {
+        return null;
+    }
+
+    var directives: ArrayList(ast.Directive) = .empty;
+    errdefer directives.deinit(allocator);
+
+    while (try parseDirective(parser, allocator)) |directive| {
+        try directives.append(allocator, directive);
+    }
+
+    return try directives.toOwnedSlice(allocator);
+}
+
+fn parseDirective(parser: *Parser, allocator: Allocator) Error!?ast.Directive {
     if (parser.current_token.token_type == .at_sign) {
         try parser.advance();
     } else {
-        parser.error_info.wanted = "@ symbol before directive";
-        return error.UnexpectedToken;
+        return null;
     }
 
     const directive_ident = switch (parser.current_token.token_type) {
