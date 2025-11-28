@@ -63,7 +63,7 @@ pub const Directive: type = struct {
 
 pub const Field: type = struct {
     name: []const u8,
-    field_type: GraphQlType,
+    graphql_type: GraphQlType,
     arguments: ?[]ArgumentDefinition,
     directives: ?[]Directive,
 };

@@ -526,7 +526,7 @@ test "parseObject" {
         try std.testing.expectEqualStrings("b", object.fields[1].name);
 
         for (object.fields) |field| {
-            if (field.field_type.child) |c| {
+            if (field.graphql_type.child) |c| {
                 std.testing.allocator.destroy(c);
             }
         }
@@ -801,8 +801,8 @@ test "parseField" {
 
         defer destroyField(field, std.testing.allocator);
 
-        try std.testing.expectEqual(true, field.field_type.is_list);
-        const child = field.field_type.child orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(true, field.graphql_type.is_list);
+        const child = field.graphql_type.child orelse return error.UnexpectedNull;
 
         const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
@@ -817,8 +817,8 @@ test "parseField" {
         const field = try parser.parseField(std.testing.allocator);
         defer destroyField(field, std.testing.allocator);
 
-        try std.testing.expectEqual(true, field.field_type.is_list);
-        const child = field.field_type.child orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(true, field.graphql_type.is_list);
+        const child = field.graphql_type.child orelse return error.UnexpectedNull;
 
         const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
@@ -837,8 +837,8 @@ test "parseField" {
         const field = try parser.parseField(std.testing.allocator);
         defer destroyField(field, std.testing.allocator);
 
-        try std.testing.expectEqual(true, field.field_type.is_list);
-        const child = field.field_type.child orelse return error.UnexpectedNull;
+        try std.testing.expectEqual(true, field.graphql_type.is_list);
+        const child = field.graphql_type.child orelse return error.UnexpectedNull;
 
         const child_name = child.named_type orelse return error.UnexpectedNull;
         try std.testing.expectEqualStrings("World", child_name);
@@ -898,7 +898,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     return ast.Field{
         .name = field_name,
-        .field_type = graphql_type,
+        .graphql_type = graphql_type,
         .arguments = argument_definitions,
         .directives = field_directives,
     };
@@ -1098,7 +1098,7 @@ fn destroyField(field: ast.Field, allocator: Allocator) void {
         }
         allocator.free(arguments);
     }
-    destroyGraphQlType(field.field_type, allocator);
+    destroyGraphQlType(field.graphql_type, allocator);
     if (field.directives) |directives| {
         for (directives) |directive| {
             destroyDirective(directive, allocator);
