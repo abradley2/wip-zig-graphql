@@ -146,11 +146,11 @@ test "parseSchemaDeclaration" {
 
 test "parseImplements" {
     {
-        const input = "TypeOne & TypeTwo";
+        const input = "implements TypeOne & TypeTwo";
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const implement_type_refs = try parseImplements(&parser, std.testing.allocator);
+        const implement_type_refs = (try parseImplements(&parser, std.testing.allocator)) orelse return error.UnexpectedNull;
         defer std.testing.allocator.free(implement_type_refs);
 
         try std.testing.expectEqual(2, implement_type_refs.len);
@@ -159,11 +159,11 @@ test "parseImplements" {
     }
 
     {
-        const input = "TypeOne";
+        const input = "implements TypeOne";
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const implement_type_refs = try parseImplements(&parser, std.testing.allocator);
+        const implement_type_refs = (try parseImplements(&parser, std.testing.allocator)) orelse return error.UnexpectedNull;
         defer std.testing.allocator.free(implement_type_refs);
 
         try std.testing.expectEqual(1, implement_type_refs.len);
@@ -171,7 +171,13 @@ test "parseImplements" {
     }
 }
 
-fn parseImplements(parser: *Parser, allocator: Allocator) Error![]ast.NamedType {
+fn parseImplements(parser: *Parser, allocator: Allocator) Error!?[]ast.NamedType {
+    if (parser.current_token.token_type == .keyword_implements) {
+        try parser.advance();
+    } else {
+        return null;
+    }
+
     var implement_type_refs: ArrayList(ast.NamedType) = .empty;
     errdefer implement_type_refs.deinit(allocator);
 
@@ -324,12 +330,9 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             }
 
             var implements: ?[]ast.NamedType = null;
-            if ((declaration_token.token_type == .keyword_type or
-                declaration_token.token_type == .keyword_interface) and
-                parser.current_token.token_type == .keyword_implements)
+            if (declaration_token.token_type == .keyword_type or
+                declaration_token.token_type == .keyword_interface)
             {
-                try parser.advance();
-
                 implements = try parseImplements(parser, allocator);
             }
 
