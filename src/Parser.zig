@@ -264,7 +264,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
         }
 
         const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
-        errdefer if (directives) |_directives| for (_directives) |d| destroyDirective(d, allocator);
+        errdefer if (directives) |d| destroyDirectives(d, allocator);
 
         try argument_definitions.append(allocator, ast.ArgumentDefinition{
             .default = default_value,
@@ -438,7 +438,7 @@ fn parseDirectiveDeclaration(
     try parser.advance();
 
     const argument_definitions: ?[]ast.ArgumentDefinition = try parseArgumentDefinitions(parser, allocator);
-    errdefer if (argument_definitions) |defs| allocator.free(defs);
+    errdefer if (argument_definitions) |defs| destroyArgumentDefinitions(defs, allocator);
 
     if (parser.current_token.token_type == .keyword_on) {
         try parser.advance();
@@ -833,19 +833,8 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     try parser.advance();
 
-    var argument_definitions: ?[]ast.ArgumentDefinition = null;
-    errdefer {
-        if (argument_definitions) |_argument_definitions| {
-            for (_argument_definitions) |argument_definition| {
-                destroyArgumentDefinition(argument_definition, allocator);
-            }
-            allocator.free(_argument_definitions);
-        }
-    }
-
-    if (parser.current_token.token_type == .l_paren) {
-        argument_definitions = try parseArgumentDefinitions(parser, allocator);
-    }
+    const argument_definitions: ?[]ast.ArgumentDefinition = try parseArgumentDefinitions(parser, allocator);
+    errdefer if (argument_definitions) |defs| destroyArgumentDefinitions(defs, allocator);
 
     if (parser.current_token.token_type == .colon) {
         try parser.advance();
@@ -1023,6 +1012,11 @@ fn parseGraphQlType(parser: *Parser, allocator: Allocator) Error!ast.GraphQlType
     };
 }
 
+fn destroyDirectives(directives: []ast.Directive, allocator: Allocator) void {
+    for (directives) |directive| destroyDirective(directive, allocator);
+    allocator.free(directives);
+}
+
 fn destroyDirective(directive: ast.Directive, allocator: Allocator) void {
     if (directive.arguments) |arguments| {
         for (arguments) |argument| {
@@ -1057,6 +1051,11 @@ fn destroyValue(value: ast.Value, allocator: Allocator) void {
     }
 }
 
+fn destroyArgumentDefinitions(argument_definitions: []ast.ArgumentDefinition, allocator: Allocator) void {
+    for (argument_definitions) |argument_definition| destroyArgumentDefinition(argument_definition, allocator);
+    allocator.free(argument_definitions);
+}
+
 fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Allocator) void {
     if (argument.default) |default_value| {
         destroyValue(default_value, allocator);
@@ -1069,6 +1068,11 @@ fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Alloca
         }
         allocator.free(directives);
     }
+}
+
+fn destroyFields(fields: []ast.Field, allocator: Allocator) void {
+    for (fields) |field| destroyField(field, allocator);
+    allocator.free(fields);
 }
 
 fn destroyField(field: ast.Field, allocator: Allocator) void {
@@ -1117,7 +1121,11 @@ fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allo
     }
     switch (type_declaration.definition) {
         .scalar_definition => {},
-        .type_definition, .input_definition, .interface_definition, .schema_definition => |object| destroyObjectType(object, allocator),
+        .type_definition,
+        .input_definition,
+        .interface_definition,
+        .schema_definition,
+        => |object| destroyObjectType(object, allocator),
         else => {},
     }
 }
