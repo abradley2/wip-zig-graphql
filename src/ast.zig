@@ -9,6 +9,7 @@ pub const SchemaDeclaration: type = union(enum) {
 };
 
 pub const DirectiveDeclaration: type = struct {
+    description: ?[]const u8 = null,
     name: []const u8,
     arguments: ?[]ArgumentDefinition,
     targets: []DirectiveLocation,
@@ -17,6 +18,7 @@ pub const DirectiveDeclaration: type = struct {
 pub const DirectiveTarget: type = []const u8;
 
 pub const TypeDeclaration: type = struct {
+    description: ?[]const u8 = null,
     extends: bool,
     name: []const u8,
     definition: TypeDefinition,

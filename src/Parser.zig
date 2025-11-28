@@ -296,6 +296,12 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
 }
 
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
+    var description: ?[]const u8 = null;
+    if (parser.current_token.token_type == .string) {
+        description = parser.current_token.token_text;
+        try parser.advance();
+    }
+
     var declaration_token = parser.current_token;
 
     var extends: bool = false;
@@ -323,12 +329,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 try parser.advance();
             }
 
-            var implements: ?[]ast.NamedType = null;
-            if (declaration_token.token_type == .keyword_type or
-                declaration_token.token_type == .keyword_interface)
-            {
-                implements = try parseImplements(parser, allocator);
-            }
+            const implements: ?[]ast.NamedType = try parseImplements(parser, allocator);
 
             const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
@@ -336,6 +337,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
+                    .description = description,
                     .extends = extends,
                     .name = type_identifier,
                     .definition = switch (declaration_token.token_type) {
@@ -362,6 +364,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
+                    .description = description,
                     .extends = extends,
                     .name = identifier,
                     .definition = .scalar_definition,
@@ -379,7 +382,8 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 return Error.UnexpectedToken;
             }
             try parser.advance();
-            const directive_declaration = try parseDirectiveDeclaration(parser, allocator);
+            var directive_declaration = try parseDirectiveDeclaration(parser, allocator);
+            directive_declaration.description = description;
             return ast.SchemaDeclaration{
                 .directive_declaration = directive_declaration,
             };
