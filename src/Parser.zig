@@ -211,7 +211,9 @@ test "parseArgumentDefinitions" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const argument_definitions = try parseArgumentDefinitions(&parser, std.testing.allocator);
+        const argument_definitions = (try parseArgumentDefinitions(&parser, std.testing.allocator)) orelse
+            return error.UnexpectedNull;
+
         defer {
             for (argument_definitions) |argument_definition| {
                 destroyArgumentDefinition(argument_definition, std.testing.allocator);
@@ -223,12 +225,11 @@ test "parseArgumentDefinitions" {
     }
 }
 
-fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error![]ast.ArgumentDefinition {
+fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.ArgumentDefinition {
     if (parser.current_token.token_type == .l_paren) {
         try parser.advance();
     } else {
-        parser.error_info.wanted = "expected opening paren ( for argument list";
-        return error.UnexpectedToken;
+        return null;
     }
 
     var argument_definitions: ArrayList(ast.ArgumentDefinition) = .empty;
@@ -460,16 +461,8 @@ fn parseDirectiveDeclaration(
 
     try parser.advance();
 
-    var argument_definitions: ?[]ast.ArgumentDefinition = null;
-    errdefer {
-        if (argument_definitions) |_argument_definitions| {
-            allocator.free(_argument_definitions);
-        }
-    }
-
-    if (parser.current_token.token_type == .l_paren) {
-        argument_definitions = try parseArgumentDefinitions(parser, allocator);
-    }
+    const argument_definitions: ?[]ast.ArgumentDefinition = try parseArgumentDefinitions(parser, allocator);
+    errdefer if (argument_definitions) |defs| allocator.free(defs);
 
     if (parser.current_token.token_type == .keyword_on) {
         try parser.advance();
