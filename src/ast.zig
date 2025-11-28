@@ -19,31 +19,26 @@ pub const DirectiveTarget: type = []const u8;
 pub const TypeDeclaration: type = struct {
     extends: bool,
     name: []const u8,
-    kind: TypeDeclarationKind,
+    definition: TypeDefinition,
     implements: ?[]NamedType,
     directives: ?[]Directive,
 };
 
-pub const TypeDeclarationKind: type = union(enum) {
-    object_type: Object,
-    scalar_type: void,
-    union_type: []NamedType,
-    enum_type: []EnumEntry,
+pub const TypeDefinition: type = union(enum) {
+    schema_definition: ObjectDefinition,
+    type_definition: ObjectDefinition,
+    interface_definition: ObjectDefinition,
+    input_definition: ObjectDefinition,
+    scalar_definition: void,
+    enum_definition: []EnumEntryDefinition,
 };
 
-pub const EnumEntry: type = struct {
+pub const EnumEntryDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
 };
 
-pub const ObjectKind: type = enum {
-    default_type,
-    interface_type,
-    input_type,
-};
-
-pub const Object: type = struct {
-    kind: ObjectKind,
+pub const ObjectDefinition: type = struct {
     fields: []Field,
 };
 

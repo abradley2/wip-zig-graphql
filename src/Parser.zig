@@ -61,18 +61,18 @@ test "parseSchemaDeclaration" {
 
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
 
-        const graph_type = switch (schema_decl) {
+        const type_declaration = switch (schema_decl) {
             .type_declaration => |v| v,
             else => return error.ExpectedGraphType,
         };
 
-        const is_scalar = switch (graph_type.kind) {
-            .scalar_type => true,
+        const is_scalar = switch (type_declaration.definition) {
+            .scalar_definition => true,
             else => false,
         };
 
         try std.testing.expectEqual(true, is_scalar);
-        try std.testing.expectEqualStrings("MyScalar", graph_type.name);
+        try std.testing.expectEqualStrings("MyScalar", type_declaration.name);
     }
 
     {
@@ -120,8 +120,8 @@ test "parseSchemaDeclaration" {
 
         try std.testing.expectEqualStrings("MyType", type_declaration.name);
 
-        const object = switch (type_declaration.kind) {
-            .object_type => |v| v,
+        const object = switch (type_declaration.definition) {
+            .type_definition => |v| v,
             else => return error.ExpectedObject,
         };
 
@@ -307,10 +307,6 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
     return switch (declaration_token.token_type) {
         .keyword_type, .keyword_input, .keyword_interface, .keyword_schema => {
-            var object_kind: ast.ObjectKind = .default_type;
-            if (declaration_token.token_type == .keyword_input) object_kind = .input_type;
-            if (declaration_token.token_type == .keyword_interface) object_kind = .interface_type;
-
             try parser.advance();
 
             const type_identifier = switch (parser.current_token.token_type) {
@@ -328,7 +324,10 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             }
 
             var implements: ?[]ast.NamedType = null;
-            if (object_kind == .default_type and parser.current_token.token_type == .keyword_implements) {
+            if ((declaration_token.token_type == .keyword_type or
+                declaration_token.token_type == .keyword_interface) and
+                parser.current_token.token_type == .keyword_implements)
+            {
                 try parser.advance();
 
                 implements = try parseImplements(parser, allocator);
@@ -352,14 +351,18 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 directives = try directives_list.toOwnedSlice(allocator);
             }
 
-            const object = try parseObject(parser, allocator, object_kind);
+            const object_definition = try parseObject(parser, allocator);
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
                     .extends = extends,
                     .name = type_identifier,
-                    .kind = .{
-                        .object_type = object,
+                    .definition = switch (declaration_token.token_type) {
+                        .keyword_schema => .{ .schema_definition = object_definition },
+                        .keyword_type => .{ .type_definition = object_definition },
+                        .keyword_interface => .{ .interface_definition = object_definition },
+                        .keyword_input => .{ .input_definition = object_definition },
+                        else => @panic("Invalid keyword for type definition"),
                     },
                     .implements = implements,
                     .directives = directives,
@@ -380,7 +383,7 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
                 .type_declaration = ast.TypeDeclaration{
                     .extends = extends,
                     .name = identifier,
-                    .kind = .scalar_type,
+                    .definition = .scalar_definition,
                     .implements = null,
                     .directives = null,
                 },
@@ -519,23 +522,23 @@ test "parseObject" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const object = try parseObject(&parser, std.testing.allocator, .default_type);
+        const object_definition = try parseObject(&parser, std.testing.allocator);
 
-        try std.testing.expectEqual(2, object.fields.len);
-        try std.testing.expectEqualStrings("a", object.fields[0].name);
-        try std.testing.expectEqualStrings("b", object.fields[1].name);
+        try std.testing.expectEqual(2, object_definition.fields.len);
+        try std.testing.expectEqualStrings("a", object_definition.fields[0].name);
+        try std.testing.expectEqualStrings("b", object_definition.fields[1].name);
 
-        for (object.fields) |field| {
+        for (object_definition.fields) |field| {
             if (field.graphql_type.child) |c| {
                 std.testing.allocator.destroy(c);
             }
         }
 
-        std.testing.allocator.free(object.fields);
+        std.testing.allocator.free(object_definition.fields);
     }
 }
 
-fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKind) Error!ast.Object {
+fn parseObject(parser: *Parser, allocator: Allocator) Error!ast.ObjectDefinition {
     if (parser.current_token.token_type == .l_brace) {
         try parser.advance();
     } else {
@@ -559,9 +562,8 @@ fn parseObject(parser: *Parser, allocator: Allocator, object_kind: ast.ObjectKin
 
     try parser.advance();
 
-    return ast.Object{
+    return ast.ObjectDefinition{
         .fields = try fields.toOwnedSlice(allocator),
-        .kind = object_kind,
     };
 }
 
@@ -1118,7 +1120,7 @@ fn destroyDirectiveDeclaration(directive_declaration: ast.DirectiveDeclaration, 
     allocator.free(directive_declaration.targets);
 }
 
-fn destroyObjectType(object: ast.Object, allocator: Allocator) void {
+fn destroyObjectType(object: ast.ObjectDefinition, allocator: Allocator) void {
     for (object.fields) |field| {
         destroyField(field, allocator);
     }
@@ -1135,9 +1137,9 @@ fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allo
     if (type_declaration.implements) |implements| {
         allocator.free(implements);
     }
-    switch (type_declaration.kind) {
-        .scalar_type => {},
-        .object_type => |object| destroyObjectType(object, allocator),
+    switch (type_declaration.definition) {
+        .scalar_definition => {},
+        .type_definition, .input_definition, .interface_definition, .schema_definition => |object| destroyObjectType(object, allocator),
         else => {},
     }
 }
