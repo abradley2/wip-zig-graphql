@@ -23,6 +23,7 @@ const ParserError: type = error{
     NotImplemented,
     OutOfMemory,
     UnexpectedToken,
+    EmptyInputDefinition,
 };
 
 const Error = ParserError || Lexer.Error;
@@ -120,14 +121,14 @@ test "parseSchemaDeclaration" {
 
         try std.testing.expectEqualStrings("MyType", type_declaration.name);
 
-        const object = switch (type_declaration.definition) {
-            .type_definition => |v| v,
+        const fields = switch (type_declaration.definition) {
+            .type_definition => |v| v orelse return error.UnexpectedNull,
             else => return error.ExpectedObject,
         };
 
-        try std.testing.expectEqual(2, object.fields.len);
-        try std.testing.expectEqualStrings("foo", object.fields[0].name);
-        try std.testing.expectEqualStrings("bar", object.fields[1].name);
+        try std.testing.expectEqual(2, fields.len);
+        try std.testing.expectEqualStrings("foo", fields[0].name);
+        try std.testing.expectEqualStrings("bar", fields[1].name);
     }
 
     {
@@ -331,17 +332,17 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
 
             const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
-            const object_definition = try parseObject(parser, allocator);
+            const fields = try parseFields(parser, allocator);
 
             return ast.SchemaDeclaration{
                 .type_declaration = ast.TypeDeclaration{
                     .extends = extends,
                     .name = type_identifier,
                     .definition = switch (declaration_token.token_type) {
-                        .keyword_schema => .{ .schema_definition = object_definition },
-                        .keyword_type => .{ .type_definition = object_definition },
-                        .keyword_interface => .{ .interface_definition = object_definition },
-                        .keyword_input => .{ .input_definition = object_definition },
+                        .keyword_schema => .{ .schema_definition = fields },
+                        .keyword_type => .{ .type_definition = fields },
+                        .keyword_interface => .{ .interface_definition = fields },
+                        .keyword_input => .{ .input_definition = fields orelse return error.EmptyInputDefinition },
                         else => @panic("Invalid keyword for type definition"),
                     },
                     .implements = implements,
@@ -483,7 +484,7 @@ fn parseDirectiveDeclaration(
     };
 }
 
-test "parseObject" {
+test "parseFields" {
     {
         const input =
             \\{
@@ -494,49 +495,15 @@ test "parseObject" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const object_definition = try parseObject(&parser, std.testing.allocator);
+        const fields = (try parseFields(&parser, std.testing.allocator)) orelse
+            return error.UnexpectedNull;
 
-        try std.testing.expectEqual(2, object_definition.fields.len);
-        try std.testing.expectEqualStrings("a", object_definition.fields[0].name);
-        try std.testing.expectEqualStrings("b", object_definition.fields[1].name);
+        defer destroyFields(fields, std.testing.allocator);
 
-        for (object_definition.fields) |field| {
-            if (field.graphql_type.child) |c| {
-                std.testing.allocator.destroy(c);
-            }
-        }
-
-        std.testing.allocator.free(object_definition.fields);
+        try std.testing.expectEqual(2, fields.len);
+        try std.testing.expectEqualStrings("a", fields[0].name);
+        try std.testing.expectEqualStrings("b", fields[1].name);
     }
-}
-
-fn parseObject(parser: *Parser, allocator: Allocator) Error!ast.ObjectDefinition {
-    if (parser.current_token.token_type == .l_brace) {
-        try parser.advance();
-    } else {
-        parser.error_info.wanted = "{ for object selection";
-        return error.UnexpectedToken;
-    }
-
-    var fields: ArrayList(ast.Field) = .empty;
-    errdefer {
-        if (fields.items.len > 0) fields.deinit(allocator);
-    }
-
-    while (parser.current_token.token_type != .r_brace) {
-        if (parser.current_token.token_type == .eof) {
-            parser.error_info.wanted = "either next field for object or ending } brace";
-            return error.UnexpectedToken;
-        }
-
-        try fields.append(allocator, try parseField(parser, allocator));
-    }
-
-    try parser.advance();
-
-    return ast.ObjectDefinition{
-        .fields = try fields.toOwnedSlice(allocator),
-    };
 }
 
 test "parseValue" {
@@ -822,6 +789,32 @@ test "parseField" {
     }
 }
 
+fn parseFields(parser: *Parser, allocator: Allocator) Error!?[]ast.Field {
+    if (parser.current_token.token_type == .l_brace) {
+        try parser.advance();
+    } else {
+        return null;
+    }
+
+    var fields: ArrayList(ast.Field) = .empty;
+    errdefer fields.deinit(allocator);
+
+    while (parser.current_token.token_type != .r_brace) {
+        const field = try parseField(parser, allocator);
+
+        try fields.append(allocator, field);
+    }
+
+    try parser.advance();
+
+    if (fields.items.len == 0) {
+        parser.error_info.wanted = "at least one field within the field selection braces";
+        return error.UnexpectedToken;
+    }
+
+    return try fields.toOwnedSlice(allocator);
+}
+
 fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const field_name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
@@ -1102,13 +1095,6 @@ fn destroyDirectiveDeclaration(directive_declaration: ast.DirectiveDeclaration, 
     allocator.free(directive_declaration.targets);
 }
 
-fn destroyObjectType(object: ast.ObjectDefinition, allocator: Allocator) void {
-    for (object.fields) |field| {
-        destroyField(field, allocator);
-    }
-    allocator.free(object.fields);
-}
-
 fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allocator) void {
     if (type_declaration.directives) |directives| {
         for (directives) |directive| {
@@ -1122,10 +1108,10 @@ fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allo
     switch (type_declaration.definition) {
         .scalar_definition => {},
         .type_definition,
-        .input_definition,
         .interface_definition,
         .schema_definition,
-        => |object| destroyObjectType(object, allocator),
+        => |fields_opt| if (fields_opt) |fields| destroyFields(fields, allocator),
+        .input_definition => |fields| destroyFields(fields, allocator),
         else => {},
     }
 }

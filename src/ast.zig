@@ -25,10 +25,10 @@ pub const TypeDeclaration: type = struct {
 };
 
 pub const TypeDefinition: type = union(enum) {
-    schema_definition: ObjectDefinition,
-    type_definition: ObjectDefinition,
-    interface_definition: ObjectDefinition,
-    input_definition: ObjectDefinition,
+    schema_definition: ?[]Field,
+    type_definition: ?[]Field,
+    interface_definition: ?[]Field,
+    input_definition: []Field,
     scalar_definition: void,
     enum_definition: []EnumEntryDefinition,
 };
@@ -36,10 +36,6 @@ pub const TypeDefinition: type = union(enum) {
 pub const EnumEntryDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
-};
-
-pub const ObjectDefinition: type = struct {
-    fields: []Field,
 };
 
 pub const NamedType: type = []const u8;
