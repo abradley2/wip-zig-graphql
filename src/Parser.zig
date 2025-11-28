@@ -237,6 +237,12 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
     errdefer argument_definitions.deinit(allocator);
 
     while (true) {
+        var description: ?[]const u8 = null;
+        if (parser.current_token.token_type == .string) {
+            description = parser.current_token.token_text;
+            try parser.advance();
+        }
+
         const argument_name = switch (parser.current_token.token_type) {
             .identifier => parser.current_token.token_text,
             else => {
@@ -268,6 +274,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
         errdefer if (directives) |d| destroyDirectives(d, allocator);
 
         try argument_definitions.append(allocator, ast.ArgumentDefinition{
+            .description = description,
             .default = default_value,
             .name = argument_name,
             .graphql_type = graphql_type,
@@ -820,6 +827,12 @@ fn parseFields(parser: *Parser, allocator: Allocator) Error!?[]ast.Field {
 }
 
 fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
+    var description: ?[]const u8 = null;
+    if (parser.current_token.token_type == .string) {
+        description = parser.current_token.token_text;
+        try parser.advance();
+    }
+
     const field_name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
         else => {
@@ -846,6 +859,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
     return ast.Field{
+        .description = description,
         .name = field_name,
         .graphql_type = graphql_type,
         .arguments = argument_definitions,

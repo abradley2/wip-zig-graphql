@@ -43,6 +43,7 @@ pub const EnumEntryDefinition: type = struct {
 pub const NamedType: type = []const u8;
 
 pub const ArgumentDefinition: type = struct {
+    description: ?[]const u8,
     name: []const u8,
     graphql_type: GraphQlType,
     default: ?Value,
@@ -55,6 +56,7 @@ pub const Directive: type = struct {
 };
 
 pub const Field: type = struct {
+    description: ?[]const u8,
     name: []const u8,
     graphql_type: GraphQlType,
     arguments: ?[]ArgumentDefinition,
