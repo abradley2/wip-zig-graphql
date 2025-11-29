@@ -163,14 +163,14 @@ test "parseImplements" {
     }
 }
 
-fn parseImplements(parser: *Parser, allocator: Allocator) Error!?[]ast.NamedType {
+fn parseImplements(parser: *Parser, allocator: Allocator) Error!?[][]const u8 {
     if (parser.current_token.token_type == .keyword_implements) {
         try parser.advance();
     } else {
         return null;
     }
 
-    var implement_type_refs: ArrayList(ast.NamedType) = .empty;
+    var implement_type_refs: ArrayList([]const u8) = .empty;
     errdefer implement_type_refs.deinit(allocator);
 
     while (true) {

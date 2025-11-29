@@ -31,14 +31,14 @@ pub const SchemaDefinition: type = struct {
 
 pub const InterfaceDefinition: type = struct {
     name: []const u8,
-    implements: ?[]NamedType,
+    implements: ?[][]const u8,
     directives: ?[]Directive,
     fields: ?[]Field,
 };
 
 pub const TypeDefinition: type = struct {
     name: []const u8,
-    implements: ?[]NamedType,
+    implements: ?[][]const u8,
     directives: ?[]Directive,
     fields: ?[]Field,
 };
@@ -55,6 +55,12 @@ pub const EnumDefinition: type = struct {
     entries: ?[]EnumEntryDefinition,
 };
 
+pub const UnionDefinition: type = struct {
+    name: []const u8,
+    directives: ?[]Directive,
+    entries: ?[]const u8,
+};
+
 pub const DirectiveDefinition: type = struct {
     repeatable: bool,
     name: []const u8,
@@ -66,8 +72,6 @@ pub const EnumEntryDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
 };
-
-pub const NamedType: type = []const u8;
 
 pub const ArgumentDefinition: type = struct {
     description: ?[]const u8,
@@ -94,7 +98,7 @@ pub const GraphQlType: type = struct {
     is_list: bool,
     is_nullable: bool,
     child: ?*GraphQlType,
-    named_type: ?NamedType,
+    named_type: ?[]const u8,
 };
 
 pub const DirectiveTarget: type = enum {
