@@ -69,6 +69,7 @@ pub const DirectiveDefinition: type = struct {
 };
 
 pub const EnumEntryDefinition: type = struct {
+    description: ?[]const u8,
     name: []const u8,
     directives: ?[]Directive,
 };

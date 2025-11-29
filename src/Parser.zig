@@ -460,6 +460,76 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
+test "parseEnumDefinition" {
+    const input =
+        \\ enum MyEnum @deprecated(reason: "old")
+        \\ {
+        \\   "description for one"
+        \\   One @onEnum @deprecated(reason: "old")
+        \\
+        \\   """
+        \\   description for two
+        \\   """
+        \\   Two @onEnum
+        \\ }
+    ;
+
+    var lexer: Lexer = .init(input);
+    var parser: Parser = try .init(&lexer);
+
+    const enum_definition =
+        try parseEnumDefinition(&parser, std.testing.allocator) orelse
+        return error.UnexpectedNull;
+    defer destroyEnumDefinition(enum_definition, std.testing.allocator);
+
+    try std.testing.expectEqualStrings("MyEnum", enum_definition.name);
+}
+
+fn parseEnumDefinition(parser: *Parser, allocator: Allocator) Error!?ast.EnumDefinition {
+    _ = try parseKeyword(parser, .keyword_enum) orelse return null;
+
+    const name = try parseIdentifier(parser, "name for enum type");
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const entries_opt = try parseEnumEntries(parser, allocator);
+    errdefer if (entries_opt) |entries| destroyEnumEntries(entries, allocator);
+
+    return ast.EnumDefinition{
+        .directives = directives_opt,
+        .entries = entries_opt,
+        .name = name,
+    };
+}
+
+fn parseEnumEntries(parser: *Parser, allocator: Allocator) Error!?[]ast.EnumEntryDefinition {
+    _ = try parseKeyword(parser, .l_brace) orelse return null;
+
+    var entries: ArrayList(ast.EnumEntryDefinition) = .empty;
+
+    while (try parseKeyword(parser, .r_brace) == null) {
+        var description: ?[]const u8 = null;
+        if (parser.current_token.token_type == .string) {
+            description = parser.current_token.token_text;
+            try parser.advance();
+        }
+
+        const name = try parseIdentifier(parser, "name for enum entry");
+
+        const directives_opt = try parseDirectives(parser, allocator);
+        errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+        try entries.append(allocator, ast.EnumEntryDefinition{
+            .name = name,
+            .directives = directives_opt,
+            .description = description,
+        });
+    }
+
+    return try entries.toOwnedSlice(allocator);
+}
+
 test "parseUnionDefinition" {
     {
         const input =
@@ -474,6 +544,7 @@ test "parseUnionDefinition" {
         const union_definition =
             try parseUnionDefinition(&parser, std.testing.allocator) orelse
             return error.UnexpectedNull;
+
         defer destroyUnionDefinition(union_definition, std.testing.allocator);
 
         try std.testing.expectEqualStrings("MyUnion", union_definition.name);
@@ -1033,6 +1104,7 @@ fn parseDirective(parser: *Parser, allocator: Allocator) Error!?ast.Directive {
 
     var arguments: ?[]ast.ValuePair = null;
     var arguments_list: ArrayList(ast.ValuePair) = .empty;
+    errdefer arguments_list.deinit(allocator);
 
     if (parser.current_token.token_type == .l_paren) {
         try parser.advance();
@@ -1190,4 +1262,18 @@ fn destroyTypeDefinition(type_definition: ast.TypeDefinition, allocator: Allocat
 fn destroyUnionDefinition(union_definition: ast.UnionDefinition, allocator: Allocator) void {
     if (union_definition.directives) |directives| destroyDirectives(directives, allocator);
     if (union_definition.entries) |entries| allocator.free(entries);
+}
+
+fn destroyEnumEntry(enum_entry: ast.EnumEntryDefinition, allocator: Allocator) void {
+    if (enum_entry.directives) |directives| destroyDirectives(directives, allocator);
+}
+
+fn destroyEnumEntries(enum_entries: []ast.EnumEntryDefinition, allocator: Allocator) void {
+    for (enum_entries) |entry| destroyEnumEntry(entry, allocator);
+    allocator.free(enum_entries);
+}
+
+fn destroyEnumDefinition(enum_definition: ast.EnumDefinition, allocator: Allocator) void {
+    if (enum_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (enum_definition.entries) |entries| destroyEnumEntries(entries, allocator);
 }
