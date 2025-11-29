@@ -59,10 +59,8 @@ pub const DirectiveDefinition: type = struct {
     repeatable: bool,
     name: []const u8,
     arguments: ?[]ArgumentDefinition,
-    targets: []DirectiveLocation,
+    targets: []DirectiveTarget,
 };
-
-pub const DirectiveTarget: type = []const u8;
 
 pub const EnumEntryDefinition: type = struct {
     name: []const u8,
@@ -99,7 +97,7 @@ pub const GraphQlType: type = struct {
     named_type: ?NamedType,
 };
 
-pub const DirectiveLocation: type = enum {
+pub const DirectiveTarget: type = enum {
     QUERY,
     MUTATION,
     SUBSCRIPTION,
@@ -120,15 +118,15 @@ pub const DirectiveLocation: type = enum {
     INPUT_OBJECT,
     INPUT_FIELD_DEFINITION,
 
-    pub fn fromString(s: []const u8) ?DirectiveLocation {
-        const enum_type = @typeInfo(DirectiveLocation).@"enum";
+    pub fn fromString(s: []const u8) ?DirectiveTarget {
+        const enum_type = @typeInfo(DirectiveTarget).@"enum";
 
-        comptime var kvs: [enum_type.fields.len]struct { []const u8, DirectiveLocation } = undefined;
+        comptime var kvs: [enum_type.fields.len]struct { []const u8, DirectiveTarget } = undefined;
         inline for (enum_type.fields, 0..) |enum_field, idx| {
-            kvs[idx] = .{ enum_field.name, @as(DirectiveLocation, @enumFromInt(enum_field.value)) };
+            kvs[idx] = .{ enum_field.name, @as(DirectiveTarget, @enumFromInt(enum_field.value)) };
         }
 
-        const ssm: std.StaticStringMap(DirectiveLocation) = .initComptime(kvs);
+        const ssm: std.StaticStringMap(DirectiveTarget) = .initComptime(kvs);
 
         return ssm.get(s);
     }

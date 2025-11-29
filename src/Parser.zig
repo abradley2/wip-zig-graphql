@@ -481,10 +481,9 @@ test "parseDirectiveDefinition" {
         defer destroyDirectiveDefinition(directive_definition, std.testing.allocator);
 
         const argument_definitions = directive_definition.arguments orelse return error.UnexpectedNull;
+
         try std.testing.expectEqual(3, argument_definitions.len);
-
         try std.testing.expectEqual(4, directive_definition.targets.len);
-
         try std.testing.expectEqualStrings("my_directive", directive_definition.name);
     }
 }
@@ -510,46 +509,39 @@ fn parseDirectiveDefinition(
         repeatable = true;
     }
 
+    return ast.DirectiveDefinition{
+        .repeatable = repeatable,
+        .name = name,
+        .arguments = argument_definitions,
+        .targets = try parseDirectiveTargets(parser, allocator),
+    };
+}
+
+fn parseDirectiveTargets(parser: *Parser, allocator: Allocator) Error![]ast.DirectiveTarget {
     _ = try parseKeyword(parser, .keyword_on) orelse {
         parser.error_info.wanted = "expecting keyword 'on' followed by valid directive locations";
         return error.UnexpectedToken;
     };
 
-    var directive_locations: ArrayList(ast.DirectiveLocation) = .empty;
-    errdefer directive_locations.deinit(allocator);
+    var directive_targets: ArrayList(ast.DirectiveTarget) = .empty;
+    errdefer directive_targets.deinit(allocator);
 
     while (true) {
-        const directive_location_ident = switch (parser.current_token.token_type) {
-            .identifier => parser.current_token.token_text,
-            else => {
-                parser.error_info.wanted = "Expecting identifier for graphql directive location";
-                return error.UnexpectedToken;
-            },
-        };
+        const directive_target_name = try parseIdentifier(parser, "Expecting identifier for graphql directive location");
 
-        try parser.advance();
-
-        const directive_location = ast.DirectiveLocation.fromString(directive_location_ident) orelse {
+        const directive_location = ast.DirectiveTarget.fromString(directive_target_name) orelse {
             parser.error_info.wanted = "Matching valid identifier for graphql directive location";
             return error.UnexpectedToken;
         };
 
-        try directive_locations.append(allocator, directive_location);
+        try directive_targets.append(allocator, directive_location);
 
-        if (parser.current_token.token_type == .pipe) {
-            try parser.advance();
-            continue;
-        }
+        if (try parseKeyword(parser, .pipe)) |_| continue;
 
         break;
     }
 
-    return ast.DirectiveDefinition{
-        .repeatable = repeatable,
-        .name = name,
-        .arguments = argument_definitions,
-        .targets = try directive_locations.toOwnedSlice(allocator),
-    };
+    return try directive_targets.toOwnedSlice(allocator);
 }
 
 test "parseFields" {
