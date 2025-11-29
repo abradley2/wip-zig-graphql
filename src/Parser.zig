@@ -1063,9 +1063,7 @@ fn destroyDirectives(directives: []ast.Directive, allocator: Allocator) void {
 
 fn destroyDirective(directive: ast.Directive, allocator: Allocator) void {
     if (directive.arguments) |arguments| {
-        for (arguments) |argument| {
-            destroyValue(argument.value, allocator);
-        }
+        for (arguments) |argument| destroyValue(argument.value, allocator);
         allocator.free(arguments);
     }
 }
@@ -1080,15 +1078,11 @@ fn destroyGraphQlType(graphQlType: ast.GraphQlType, allocator: Allocator) void {
 fn destroyValue(value: ast.Value, allocator: Allocator) void {
     switch (value) {
         .list_type => |list| {
-            for (list) |sub_value| {
-                destroyValue(sub_value, allocator);
-            }
+            for (list) |sub_value| destroyValue(sub_value, allocator);
             allocator.free(list);
         },
         .object_type => |obj| {
-            for (obj) |pair| {
-                destroyValue(pair.value, allocator);
-            }
+            for (obj) |pair| destroyValue(pair.value, allocator);
             allocator.free(obj);
         },
         else => {},
@@ -1100,18 +1094,10 @@ fn destroyArgumentDefinitions(argument_definitions: []ast.ArgumentDefinition, al
     allocator.free(argument_definitions);
 }
 
-fn destroyArgumentDefinition(argument: ast.ArgumentDefinition, allocator: Allocator) void {
-    if (argument.default) |default_value| {
-        destroyValue(default_value, allocator);
-    }
-    destroyGraphQlType(argument.graphql_type, allocator);
-
-    if (argument.directives) |directives| {
-        for (directives) |directive| {
-            destroyDirective(directive, allocator);
-        }
-        allocator.free(directives);
-    }
+fn destroyArgumentDefinition(argument_definition: ast.ArgumentDefinition, allocator: Allocator) void {
+    if (argument_definition.default) |default_value| destroyValue(default_value, allocator);
+    if (argument_definition.directives) |directives| destroyDirectives(directives, allocator);
+    destroyGraphQlType(argument_definition.graphql_type, allocator);
 }
 
 fn destroyFields(fields: []ast.Field, allocator: Allocator) void {
@@ -1120,29 +1106,13 @@ fn destroyFields(fields: []ast.Field, allocator: Allocator) void {
 }
 
 fn destroyField(field: ast.Field, allocator: Allocator) void {
-    if (field.arguments) |arguments| {
-        for (arguments) |argument| {
-            destroyArgumentDefinition(argument, allocator);
-        }
-        allocator.free(arguments);
-    }
+    if (field.arguments) |argument_definitions| destroyArgumentDefinitions(argument_definitions, allocator);
+    if (field.directives) |directives| destroyDirectives(directives, allocator);
     destroyGraphQlType(field.graphql_type, allocator);
-    if (field.directives) |directives| {
-        for (directives) |directive| {
-            destroyDirective(directive, allocator);
-        }
-        allocator.free(directives);
-    }
 }
 
 fn destroyDirectiveDefinition(directive_definition: ast.DirectiveDefinition, allocator: Allocator) void {
-    if (directive_definition.arguments) |arguments| {
-        for (arguments) |argument| {
-            destroyArgumentDefinition(argument, allocator);
-        }
-        allocator.free(arguments);
-    }
-
+    if (directive_definition.arguments) |argument_definitions| destroyArgumentDefinitions(argument_definitions, allocator);
     allocator.free(directive_definition.targets);
 }
 
