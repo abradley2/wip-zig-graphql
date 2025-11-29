@@ -43,8 +43,56 @@ fn advance(parser: *Parser) Error!void {
     parser.peek_token = try parser.lexer.peekToken();
 }
 
-fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDocument {
+fn positionToLocation(position: usize, input: []const u8) struct { usize, usize } {
+    var line: usize = 1;
+    var column: usize = 1;
+
+    for (input, 0..) |c, idx| {
+        if (idx == position) break;
+
+        if (c == '\n') {
+            line += 1;
+            column = 1;
+            continue;
+        }
+        column += 1;
+    }
+
+    return .{ line, column };
+}
+
+test "schema definition language kitchen sink" {
+    const input = @embedFile("test_fixtures/sdl_kitchen_sink.graphql");
+    var lexer: Lexer = .init(input);
+    var parser: Parser = try .init(&lexer);
+
+    const schema_document = parseSchemaDocument(&parser, std.testing.allocator) catch |err| {
+        if (err == Error.UnexpectedToken) {
+            const line, const column = positionToLocation(parser.lexer.position, input);
+            std.debug.print("\nWanted: {s}\n", .{parser.error_info.wanted});
+            std.debug.print("Got: {s}\n", .{parser.current_token.token_text});
+            std.debug.print("At: line {d}, column {d}\n", .{ line, column });
+        }
+
+        return err;
+    };
+
+    defer {
+        for (schema_document) |schema_declaration| {
+            destroySchemaDeclaration(schema_declaration, std.testing.allocator);
+        }
+        std.testing.allocator.free(schema_document);
+    }
+
+    try std.testing.expectEqual(1, schema_document.len);
+}
+
+fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDeclaration {
     var schema_declarations: ArrayList(ast.SchemaDeclaration) = .empty;
+    errdefer {
+        for (schema_declarations.items) |schema_declaration| destroySchemaDeclaration(schema_declaration, allocator);
+        schema_declarations.deinit(allocator);
+    }
 
     while (parser.peek_token.token_type != .eof) {
         const schema_declaration = try parseSchemaDeclaration(parser, allocator);
@@ -587,10 +635,10 @@ test "parseUnionDefinition" {
 fn parseUnionDefinition(parser: *Parser, allocator: Allocator) Error!?ast.UnionDefinition {
     _ = try parseKeyword(parser, .keyword_union) orelse return null;
 
+    const name = try parseIdentifier(parser, "name for union");
+
     const directives_opt = try parseDirectives(parser, allocator);
     errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
-
-    const name = try parseIdentifier(parser, "name for union");
 
     const entries: ?[][]const u8 = try parseUnionEntries(parser, allocator);
 
@@ -605,6 +653,8 @@ fn parseUnionDefinition(parser: *Parser, allocator: Allocator) Error!?ast.UnionD
 
 fn parseUnionEntries(parser: *Parser, allocator: Allocator) Error!?[][]const u8 {
     _ = try parseKeyword(parser, .equals) orelse return null;
+
+    _ = try parseKeyword(parser, .pipe);
 
     var entries: ArrayList([]const u8) = .empty;
     errdefer entries.deinit(allocator);
