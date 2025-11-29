@@ -56,6 +56,26 @@ fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.Schema
 
 test "parseSchemaDeclaration" {
     {
+        const input =
+            \\ "description of my type"
+            \\ type MyType {
+            \\   foo: String! 
+            \\   bar: [Int]!
+            \\   baz: Boolean
+            \\ }
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const schema_declaration = try parseSchemaDeclaration(&parser, std.testing.allocator);
+        defer destroySchemaDeclaration(schema_declaration, std.testing.allocator);
+
+        const description = schema_declaration.description orelse return error.UnexpectedNull;
+
+        try std.testing.expectEqualStrings("\"description of my type\"", description);
+    }
+    {
         const input = "scalar MyScalar";
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
@@ -357,6 +377,7 @@ fn parseTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.TypeDef
     const name = try parseIdentifier(parser, "name for type");
 
     const implements_opt = try parseImplements(parser, allocator);
+    errdefer if (implements_opt) |implements| allocator.free(implements);
 
     const directives_opt = try parseDirectives(parser, allocator);
     errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
@@ -433,9 +454,8 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     }
 
     var extends: bool = false;
-    if (parser.current_token.token_type == .keyword_extend) {
+    if (try parseKeyword(parser, .keyword_extend)) |_| {
         extends = true;
-        try parser.advance();
     }
 
     return ast.SchemaDeclaration{
@@ -453,6 +473,10 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
             .{ .scalar_definition = scalar_definition }
         else if (try parseDirectiveDefinition(parser, allocator)) |directive_definition|
             .{ .directive_definition = directive_definition }
+        else if (try parseUnionDefinition(parser, allocator)) |union_definition|
+            .{ .union_definition = union_definition }
+        else if (try parseEnumDefinition(parser, allocator)) |enum_definition|
+            .{ .enum_definition = enum_definition }
         else {
             parser.error_info.wanted = "type, schema, scalar, interface, input, enum, union, or directive definition";
             return error.UnexpectedToken;
@@ -1276,4 +1300,37 @@ fn destroyEnumEntries(enum_entries: []ast.EnumEntryDefinition, allocator: Alloca
 fn destroyEnumDefinition(enum_definition: ast.EnumDefinition, allocator: Allocator) void {
     if (enum_definition.directives) |directives| destroyDirectives(directives, allocator);
     if (enum_definition.entries) |entries| destroyEnumEntries(entries, allocator);
+}
+
+fn destroyInputDefinition(input_definition: ast.InputDefinition, allocator: Allocator) void {
+    if (input_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (input_definition.fields) |fields| destroyFields(fields, allocator);
+}
+
+fn destroySchemaDefinition(schema_definition: ast.SchemaDefinition, allocator: Allocator) void {
+    if (schema_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (schema_definition.fields) |fields| destroyFields(fields, allocator);
+}
+
+fn destroyInterfaceDefinition(interface_definition: ast.InterfaceDefinition, allocator: Allocator) void {
+    if (interface_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (interface_definition.fields) |fields| destroyFields(fields, allocator);
+    if (interface_definition.implements) |implements| allocator.free(implements);
+}
+
+fn destroyScalarDefinition(scalar_definition: ast.ScalarDefinition, allocator: Allocator) void {
+    if (scalar_definition.directives) |directives| destroyDirectives(directives, allocator);
+}
+
+fn destroySchemaDeclaration(schema_declaration: ast.SchemaDeclaration, allocator: Allocator) void {
+    switch (schema_declaration.definition) {
+        .directive_definition => |definition| destroyDirectiveDefinition(definition, allocator),
+        .enum_definition => |definition| destroyEnumDefinition(definition, allocator),
+        .input_definition => |definition| destroyInputDefinition(definition, allocator),
+        .schema_definition => |definition| destroySchemaDefinition(definition, allocator),
+        .interface_definition => |definition| destroyInterfaceDefinition(definition, allocator),
+        .type_definition => |definition| destroyTypeDefinition(definition, allocator),
+        .union_definition => |definition| destroyUnionDefinition(definition, allocator),
+        .scalar_definition => |definition| destroyScalarDefinition(definition, allocator),
+    }
 }

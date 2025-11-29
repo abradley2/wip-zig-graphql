@@ -17,6 +17,7 @@ pub const Definition: type = union(enum(u8)) {
     schema_definition: SchemaDefinition,
     enum_definition: EnumDefinition,
     scalar_definition: ScalarDefinition,
+    union_definition: UnionDefinition,
 };
 
 pub const ScalarDefinition: type = struct {
