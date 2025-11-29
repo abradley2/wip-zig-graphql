@@ -3,76 +3,66 @@ const Allocator = std.mem.Allocator;
 
 pub const SchemaDocument: type = []SchemaDeclaration;
 
-pub const SchemaDeclaration: type = union(enum) {
-    directive_declaration: DirectiveDeclaration,
-    type_declaration: TypeDeclaration,
-};
-
-pub const Declaration: type = struct {
+pub const SchemaDeclaration: type = struct {
+    description: ?[]const u8,
     extends: bool,
-    description: []const u8,
     definition: Definition,
 };
 
-pub const Definition: type = union(u8) {
-    interface: InterfaceTypeDefinition,
-    input: InputTypeDefinition,
-    object: ObjectTypeDefinition,
+pub const Definition: type = union(enum(u8)) {
+    directive_definition: DirectiveDefinition,
+    interface_definition: InterfaceDefinition,
+    input_definition: InputDefinition,
+    type_definition: TypeDefinition,
+    schema_definition: SchemaDefinition,
+    enum_definition: EnumDefinition,
+    scalar_definition: ScalarDefinition,
 };
 
-pub const InterfaceTypeDefinition: type = struct {
+pub const ScalarDefinition: type = struct {
+    name: []const u8,
+    directives: ?[]Directive,
+};
+
+pub const SchemaDefinition: type = struct {
+    directives: ?[]Directive,
+    fields: ?[]Field,
+};
+
+pub const InterfaceDefinition: type = struct {
     name: []const u8,
     implements: ?[]NamedType,
     directives: ?[]Directive,
     fields: ?[]Field,
 };
 
-pub const ObjectTypeDefinition: type = struct {
+pub const TypeDefinition: type = struct {
     name: []const u8,
     implements: ?[]NamedType,
     directives: ?[]Directive,
     fields: ?[]Field,
 };
 
-pub const InputTypeDefinition: type = struct {
+pub const InputDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
     fields: ?[]Field,
 };
 
-pub const EnumTypeDefinition: type = struct {
+pub const EnumDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
     entries: ?[]EnumEntryDefinition,
 };
 
-pub const DirectiveDeclaration: type = struct {
+pub const DirectiveDefinition: type = struct {
     repeatable: bool,
-    description: ?[]const u8 = null,
     name: []const u8,
     arguments: ?[]ArgumentDefinition,
     targets: []DirectiveLocation,
 };
 
 pub const DirectiveTarget: type = []const u8;
-
-pub const TypeDeclaration: type = struct {
-    description: ?[]const u8 = null,
-    extends: bool,
-    name: []const u8,
-    definition: TypeDefinition,
-    implements: ?[]NamedType,
-    directives: ?[]Directive,
-};
-
-pub const TypeDefinition: type = union(enum) {
-    schema_definition: ?[]Field,
-    type_definition: ?[]Field,
-    interface_definition: ?[]Field,
-    input_definition: []Field,
-    scalar_definition: void,
-    enum_definition: []EnumEntryDefinition,
-};
 
 pub const EnumEntryDefinition: type = struct {
     name: []const u8,

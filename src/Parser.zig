@@ -62,18 +62,12 @@ test "parseSchemaDeclaration" {
 
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
 
-        const type_declaration = switch (schema_decl) {
-            .type_declaration => |v| v,
+        const scalar_definition = switch (schema_decl.definition) {
+            .scalar_definition => |v| v,
             else => return error.ExpectedGraphType,
         };
 
-        const is_scalar = switch (type_declaration.definition) {
-            .scalar_definition => true,
-            else => false,
-        };
-
-        try std.testing.expectEqual(true, is_scalar);
-        try std.testing.expectEqualStrings("MyScalar", type_declaration.name);
+        try std.testing.expectEqualStrings("MyScalar", scalar_definition.name);
     }
 
     {
@@ -86,13 +80,13 @@ test "parseSchemaDeclaration" {
         var parser: Parser = try .init(&lexer);
 
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
-        const directive_declaration = switch (schema_decl) {
-            .directive_declaration => |v| v,
-            else => return error.ExpectedDirectiveDeclaration,
+        const directive_definition = switch (schema_decl.definition) {
+            .directive_definition => |v| v,
+            else => return error.ExpectedDirectiveDefinition,
         };
-        defer destroyDirectiveDeclaration(directive_declaration, std.testing.allocator);
+        defer destroyDirectiveDefinition(directive_definition, std.testing.allocator);
 
-        const arguments = directive_declaration.arguments orelse return error.UnexpectedNull;
+        const arguments = directive_definition.arguments orelse return error.UnexpectedNull;
         try std.testing.expectEqual(1, arguments.len);
         const default_value = arguments[0].default orelse return error.UnexpectedNull;
         const default_value_string = switch (default_value) {
@@ -113,18 +107,15 @@ test "parseSchemaDeclaration" {
         var parser: Parser = try .init(&lexer);
 
         const schema_declaration = try parseSchemaDeclaration(&parser, std.testing.allocator);
-        const type_declaration = switch (schema_declaration) {
-            .type_declaration => |v| v,
+        const type_definition = switch (schema_declaration.definition) {
+            .type_definition => |v| v,
             else => return error.ExpectedTypeDeclaration,
         };
-        defer destroyTypeDeclaration(type_declaration, std.testing.allocator);
+        defer destroyTypeDefinition(type_definition, std.testing.allocator);
 
-        try std.testing.expectEqualStrings("MyType", type_declaration.name);
+        try std.testing.expectEqualStrings("MyType", type_definition.name);
 
-        const fields = switch (type_declaration.definition) {
-            .type_definition => |v| v orelse return error.UnexpectedNull,
-            else => return error.ExpectedObject,
-        };
+        const fields = type_definition.fields orelse return error.UnexpectedNull;
 
         try std.testing.expectEqual(2, fields.len);
         try std.testing.expectEqualStrings("foo", fields[0].name);
@@ -320,7 +311,7 @@ fn parseKeyword(parser: *Parser, keyword: TokenType) !?struct {} {
     return null;
 }
 
-test "parseObjectDefinition" {
+test "parseTypeDefinition" {
     {
         const input =
             \\type MyType 
@@ -337,15 +328,30 @@ test "parseObjectDefinition" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const object_type_definition =
-            try parseObjectTypeDefinition(&parser, std.testing.allocator) orelse
+        const type_definition =
+            try parseTypeDefinition(&parser, std.testing.allocator) orelse
             return error.UnexpectedNull;
 
-        defer destroyObjectTypeDefinition(object_type_definition, std.testing.allocator);
+        defer destroyTypeDefinition(type_definition, std.testing.allocator);
     }
 }
 
-fn parseObjectTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.ObjectTypeDefinition {
+fn parseSchemaDefinition(parser: *Parser, allocator: Allocator) Error!?ast.SchemaDefinition {
+    _ = try parseKeyword(parser, .keyword_schema) orelse return null;
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const fields_opt = try parseFields(parser, allocator);
+    errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
+
+    return ast.SchemaDefinition{
+        .directives = directives_opt,
+        .fields = fields_opt,
+    };
+}
+
+fn parseTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.TypeDefinition {
     _ = try parseKeyword(parser, .keyword_type) orelse return null;
 
     const name = try parseIdentifier(parser, "name for type");
@@ -358,7 +364,7 @@ fn parseObjectTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.O
     const fields_opt = try parseFields(parser, allocator);
     errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
 
-    return ast.ObjectTypeDefinition{
+    return ast.TypeDefinition{
         .name = name,
         .implements = implements_opt,
         .directives = directives_opt,
@@ -366,7 +372,21 @@ fn parseObjectTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.O
     };
 }
 
-fn parseInterfaceTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputTypeDefinition {
+fn parseScalarDefinition(parser: *Parser, allocator: Allocator) Error!?ast.ScalarDefinition {
+    _ = try parseKeyword(parser, .keyword_scalar) orelse return null;
+
+    const name = try parseIdentifier(parser, "name for scalar");
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    return ast.ScalarDefinition{
+        .name = name,
+        .directives = directives_opt,
+    };
+}
+
+fn parseInterfaceDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InterfaceDefinition {
     _ = try parseKeyword(parser, .keyword_interface) orelse return null;
 
     const name = try parseIdentifier(parser, "name for interface");
@@ -379,7 +399,7 @@ fn parseInterfaceTypeDefinition(parser: *Parser, allocator: Allocator) Error!?as
     const fields_opt = try parseFields(parser, allocator);
     errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
 
-    return ast.ObjectTypeDefinition{
+    return ast.InterfaceDefinition{
         .name = name,
         .implements = implements_opt,
         .directives = directives_opt,
@@ -387,7 +407,7 @@ fn parseInterfaceTypeDefinition(parser: *Parser, allocator: Allocator) Error!?as
     };
 }
 
-fn parseInputTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputTypeDefinition {
+fn parseInputDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputDefinition {
     _ = try parseKeyword(parser, .keyword_input) orelse return null;
 
     const name = try parseIdentifier(parser, "name for input type");
@@ -398,7 +418,7 @@ fn parseInputTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.In
     const fields_opt = try parseFields(parser, allocator);
     errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
 
-    return ast.InputTypeDefinition{
+    return ast.InputDefinition{
         .name = name,
         .directives = directives_opt,
         .fields = fields_opt,
@@ -412,103 +432,38 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
         try parser.advance();
     }
 
-    var declaration_token = parser.current_token;
-
     var extends: bool = false;
-    if (declaration_token.token_type == .keyword_extend) {
+    if (parser.current_token.token_type == .keyword_extend) {
         extends = true;
         try parser.advance();
-        declaration_token = parser.current_token;
     }
 
-    return switch (declaration_token.token_type) {
-        .keyword_type, .keyword_input, .keyword_interface, .keyword_schema => {
-            try parser.advance();
-
-            const type_identifier = switch (parser.current_token.token_type) {
-                .identifier => parser.current_token.token_text,
-                else => if (declaration_token.token_type == .keyword_schema)
-                    declaration_token.token_text
-                else {
-                    parser.error_info.wanted = "name for type, input, or interface";
-                    return error.UnexpectedToken;
-                },
-            };
-
-            if (declaration_token.token_type != .keyword_schema) {
-                try parser.advance();
-            }
-
-            const implements: ?[]ast.NamedType = try parseImplements(parser, allocator);
-
-            const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
-
-            const fields = try parseFields(parser, allocator);
-
-            return ast.SchemaDeclaration{
-                .type_declaration = ast.TypeDeclaration{
-                    .description = description,
-                    .extends = extends,
-                    .name = type_identifier,
-                    .definition = switch (declaration_token.token_type) {
-                        .keyword_schema => .{ .schema_definition = fields },
-                        .keyword_type => .{ .type_definition = fields },
-                        .keyword_interface => .{ .interface_definition = fields },
-                        .keyword_input => .{ .input_definition = fields orelse return error.EmptyInputDefinition },
-                        else => @panic("Invalid keyword for type definition"),
-                    },
-                    .implements = implements,
-                    .directives = directives,
-                },
-            };
-        },
-        .keyword_scalar => {
-            try parser.advance();
-            const identifier = switch (parser.current_token.token_type) {
-                .identifier => parser.current_token.token_text,
-                else => {
-                    parser.error_info.wanted = "identifier for scalar";
-                    return error.UnexpectedToken;
-                },
-            };
-
-            return ast.SchemaDeclaration{
-                .type_declaration = ast.TypeDeclaration{
-                    .description = description,
-                    .extends = extends,
-                    .name = identifier,
-                    .definition = .scalar_definition,
-                    .implements = null,
-                    .directives = null,
-                },
-            };
-        },
-        .keyword_enum => {
-            try parser.advance();
-            return error.NotImplemented;
-        },
-        .keyword_directive => {
-            if (extends) {
-                return Error.UnexpectedToken;
-            }
-            try parser.advance();
-            var directive_declaration = try parseDirectiveDeclaration(parser, allocator);
-            directive_declaration.description = description;
-            return ast.SchemaDeclaration{
-                .directive_declaration = directive_declaration,
-            };
-        },
-        else => {
-            parser.error_info.wanted = "type, input, interface, scalar, enum, or directive keyword";
+    return ast.SchemaDeclaration{
+        .description = description,
+        .extends = extends,
+        .definition = if (try parseSchemaDefinition(parser, allocator)) |schema_definition|
+            .{ .schema_definition = schema_definition }
+        else if (try parseInterfaceDefinition(parser, allocator)) |interface_definition|
+            .{ .interface_definition = interface_definition }
+        else if (try parseInputDefinition(parser, allocator)) |input_definition|
+            .{ .input_definition = input_definition }
+        else if (try parseTypeDefinition(parser, allocator)) |type_definition|
+            .{ .type_definition = type_definition }
+        else if (try parseScalarDefinition(parser, allocator)) |scalar_definition|
+            .{ .scalar_definition = scalar_definition }
+        else if (try parseDirectiveDefinition(parser, allocator)) |directive_definition|
+            .{ .directive_definition = directive_definition }
+        else {
+            parser.error_info.wanted = "type, schema, scalar, interface, input, enum, union, or directive definition";
             return error.UnexpectedToken;
         },
     };
 }
 
-test "parseDirectiveDeclaration" {
+test "parseDirectiveDefinition" {
     {
         const input =
-            \\@my_directive(
+            \\directive @my_directive(
             \\  arg_one: Boolean
             \\  arg_two: String, arg_three: [Boolean!]
             \\) repeatable on FIELD_DEFINITION | 
@@ -519,28 +474,31 @@ test "parseDirectiveDeclaration" {
         var lexer: Lexer = .init(input);
         var parser: Parser = try .init(&lexer);
 
-        const directive_declaration = try parseDirectiveDeclaration(&parser, std.testing.allocator);
-        defer destroyDirectiveDeclaration(directive_declaration, std.testing.allocator);
+        const directive_definition =
+            try parseDirectiveDefinition(&parser, std.testing.allocator) orelse
+            return error.UnexpectedNull;
 
-        const argument_definitions = directive_declaration.arguments orelse return error.UnexpectedNull;
+        defer destroyDirectiveDefinition(directive_definition, std.testing.allocator);
+
+        const argument_definitions = directive_definition.arguments orelse return error.UnexpectedNull;
         try std.testing.expectEqual(3, argument_definitions.len);
 
-        try std.testing.expectEqual(4, directive_declaration.targets.len);
+        try std.testing.expectEqual(4, directive_definition.targets.len);
 
-        try std.testing.expectEqualStrings("my_directive", directive_declaration.name);
+        try std.testing.expectEqualStrings("my_directive", directive_definition.name);
     }
 }
 
-fn parseDirectiveDeclaration(
+fn parseDirectiveDefinition(
     parser: *Parser,
     allocator: Allocator,
-) Error!ast.DirectiveDeclaration {
-    if (parser.current_token.token_type == .at_sign) {
-        try parser.advance();
-    } else {
+) Error!?ast.DirectiveDefinition {
+    _ = try parseKeyword(parser, .keyword_directive) orelse return null;
+
+    _ = try parseKeyword(parser, .at_sign) orelse {
         parser.error_info.wanted = "an '@' symbol prior to the directive's name";
         return error.UnexpectedToken;
-    }
+    };
 
     const name = try parseIdentifier(parser, "name for directive declaration");
 
@@ -586,7 +544,7 @@ fn parseDirectiveDeclaration(
         break;
     }
 
-    return ast.DirectiveDeclaration{
+    return ast.DirectiveDefinition{
         .repeatable = repeatable,
         .name = name,
         .arguments = argument_definitions,
@@ -792,27 +750,11 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
         };
     }
 
-    if (parser.current_token.token_type == .keyword_true) {
-        try parser.advance();
+    if (try parseKeyword(parser, .keyword_true)) |_| return .{ .boolean_type = true };
 
-        return ast.Value{
-            .boolean_type = true,
-        };
-    }
+    if (try parseKeyword(parser, .keyword_false)) |_| return .{ .boolean_type = false };
 
-    if (parser.current_token.token_type == .keyword_false) {
-        try parser.advance();
-
-        return ast.Value{
-            .boolean_type = false,
-        };
-    }
-
-    if (parser.current_token.token_type == .keyword_null) {
-        try parser.advance();
-
-        return .null_type;
-    }
+    if (try parseKeyword(parser, .keyword_null)) |_| return .null_type;
 
     parser.error_info.wanted = "float, bool, null, string, list or object value";
     return error.UnexpectedToken;
@@ -1201,40 +1143,19 @@ fn destroyField(field: ast.Field, allocator: Allocator) void {
     }
 }
 
-fn destroyDirectiveDeclaration(directive_declaration: ast.DirectiveDeclaration, allocator: Allocator) void {
-    if (directive_declaration.arguments) |arguments| {
+fn destroyDirectiveDefinition(directive_definition: ast.DirectiveDefinition, allocator: Allocator) void {
+    if (directive_definition.arguments) |arguments| {
         for (arguments) |argument| {
             destroyArgumentDefinition(argument, allocator);
         }
         allocator.free(arguments);
     }
 
-    allocator.free(directive_declaration.targets);
+    allocator.free(directive_definition.targets);
 }
 
-fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allocator) void {
-    if (type_declaration.directives) |directives| {
-        for (directives) |directive| {
-            destroyDirective(directive, allocator);
-        }
-        allocator.free(directives);
-    }
-    if (type_declaration.implements) |implements| {
-        allocator.free(implements);
-    }
-    switch (type_declaration.definition) {
-        .scalar_definition => {},
-        .type_definition,
-        .interface_definition,
-        .schema_definition,
-        => |fields_opt| if (fields_opt) |fields| destroyFields(fields, allocator),
-        .input_definition => |fields| destroyFields(fields, allocator),
-        else => {},
-    }
-}
-
-fn destroyObjectTypeDefinition(object_type_definition: ast.ObjectTypeDefinition, allocator: Allocator) void {
-    if (object_type_definition.directives) |directives| destroyDirectives(directives, allocator);
-    if (object_type_definition.fields) |fields| destroyFields(fields, allocator);
-    if (object_type_definition.implements) |implements| allocator.free(implements);
+fn destroyTypeDefinition(type_definition: ast.TypeDefinition, allocator: Allocator) void {
+    if (type_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (type_definition.fields) |fields| destroyFields(fields, allocator);
+    if (type_definition.implements) |implements| allocator.free(implements);
 }
