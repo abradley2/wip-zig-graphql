@@ -366,6 +366,45 @@ fn parseObjectTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.O
     };
 }
 
+fn parseInterfaceTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputTypeDefinition {
+    _ = try parseKeyword(parser, .keyword_interface) orelse return null;
+
+    const name = try parseIdentifier(parser, "name for interface");
+
+    const implements_opt = try parseImplements(parser, allocator);
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const fields_opt = try parseFields(parser, allocator);
+    errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
+
+    return ast.ObjectTypeDefinition{
+        .name = name,
+        .implements = implements_opt,
+        .directives = directives_opt,
+        .fields = fields_opt,
+    };
+}
+
+fn parseInputTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputTypeDefinition {
+    _ = try parseKeyword(parser, .keyword_input) orelse return null;
+
+    const name = try parseIdentifier(parser, "name for input type");
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const fields_opt = try parseFields(parser, allocator);
+    errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
+
+    return ast.InputTypeDefinition{
+        .name = name,
+        .directives = directives_opt,
+        .fields = fields_opt,
+    };
+}
+
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
     var description: ?[]const u8 = null;
     if (parser.current_token.token_type == .string) {
@@ -503,31 +542,20 @@ fn parseDirectiveDeclaration(
         return error.UnexpectedToken;
     }
 
-    const directive_ident = switch (parser.current_token.token_type) {
-        .identifier => parser.current_token.token_text,
-        else => {
-            parser.error_info.wanted = "Identifier for directive declaration";
-            return error.UnexpectedToken;
-        },
-    };
-
-    try parser.advance();
+    const name = try parseIdentifier(parser, "name for directive declaration");
 
     const argument_definitions: ?[]ast.ArgumentDefinition = try parseArgumentDefinitions(parser, allocator);
     errdefer if (argument_definitions) |defs| destroyArgumentDefinitions(defs, allocator);
 
     var repeatable: bool = false;
-    if (parser.current_token.token_type == .keyword_repeatable) {
+    if (try parseKeyword(parser, .keyword_repeatable)) |_| {
         repeatable = true;
-        try parser.advance();
     }
 
-    if (parser.current_token.token_type == .keyword_on) {
-        try parser.advance();
-    } else {
+    _ = try parseKeyword(parser, .keyword_on) orelse {
         parser.error_info.wanted = "expecting keyword 'on' followed by valid directive locations";
         return error.UnexpectedToken;
-    }
+    };
 
     var directive_locations: ArrayList(ast.DirectiveLocation) = .empty;
     errdefer directive_locations.deinit(allocator);
@@ -560,7 +588,7 @@ fn parseDirectiveDeclaration(
 
     return ast.DirectiveDeclaration{
         .repeatable = repeatable,
-        .name = directive_ident,
+        .name = name,
         .arguments = argument_definitions,
         .targets = try directive_locations.toOwnedSlice(allocator),
     };

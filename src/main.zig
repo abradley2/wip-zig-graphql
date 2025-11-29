@@ -13,6 +13,14 @@ pub fn main() !void {
     var lexer: Lexer = .init(input);
     const parser: Parser = try .init(&lexer);
     _ = parser;
+
+    const nullable: ?u32 = null;
+    const some_num = nullable orelse ret: {
+        std.debug.print("This should not be null!\n", .{});
+        break :ret 1;
+    };
+
+    std.debug.print("Some num = {d}\n", .{some_num});
 }
 
 test "simple test" {
