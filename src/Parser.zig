@@ -460,6 +460,71 @@ fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.Schem
     };
 }
 
+test "parseUnionDefinition" {
+    {
+        const input =
+            \\ union MyUnion
+            \\   = Foo 
+            \\   | Bar 
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const union_definition =
+            try parseUnionDefinition(&parser, std.testing.allocator) orelse
+            return error.UnexpectedNull;
+        defer destroyUnionDefinition(union_definition, std.testing.allocator);
+
+        try std.testing.expectEqualStrings("MyUnion", union_definition.name);
+        try std.testing.expectEqual(null, union_definition.directives);
+
+        const entries =
+            union_definition.entries orelse
+            return error.UnexpectedNull;
+
+        try std.testing.expectEqual(2, entries.len);
+        try std.testing.expectEqualStrings("Foo", entries[0]);
+        try std.testing.expectEqualStrings("Bar", entries[1]);
+    }
+}
+
+fn parseUnionDefinition(parser: *Parser, allocator: Allocator) Error!?ast.UnionDefinition {
+    _ = try parseKeyword(parser, .keyword_union) orelse return null;
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const name = try parseIdentifier(parser, "name for union");
+
+    const entries: ?[][]const u8 = try parseUnionEntries(parser, allocator);
+
+    if (try parseKeyword(parser, .equals)) |_| {}
+
+    return ast.UnionDefinition{
+        .directives = directives_opt,
+        .entries = entries,
+        .name = name,
+    };
+}
+
+fn parseUnionEntries(parser: *Parser, allocator: Allocator) Error!?[][]const u8 {
+    _ = try parseKeyword(parser, .equals) orelse return null;
+
+    var entries: ArrayList([]const u8) = .empty;
+    errdefer entries.deinit(allocator);
+    while (true) {
+        const entry = try parseIdentifier(parser, "identifier for union entry");
+        try entries.append(allocator, entry);
+
+        if (try parseKeyword(parser, .pipe)) |_| continue;
+
+        break;
+    }
+
+    return try entries.toOwnedSlice(allocator);
+}
+
 test "parseDirectiveDefinition" {
     {
         const input =
@@ -1120,4 +1185,9 @@ fn destroyTypeDefinition(type_definition: ast.TypeDefinition, allocator: Allocat
     if (type_definition.directives) |directives| destroyDirectives(directives, allocator);
     if (type_definition.fields) |fields| destroyFields(fields, allocator);
     if (type_definition.implements) |implements| allocator.free(implements);
+}
+
+fn destroyUnionDefinition(union_definition: ast.UnionDefinition, allocator: Allocator) void {
+    if (union_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (union_definition.entries) |entries| allocator.free(entries);
 }

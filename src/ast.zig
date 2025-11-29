@@ -58,7 +58,7 @@ pub const EnumDefinition: type = struct {
 pub const UnionDefinition: type = struct {
     name: []const u8,
     directives: ?[]Directive,
-    entries: ?[]const u8,
+    entries: ?[][]const u8,
 };
 
 pub const DirectiveDefinition: type = struct {
