@@ -9,6 +9,7 @@ pub const SchemaDeclaration: type = union(enum) {
 };
 
 pub const DirectiveDeclaration: type = struct {
+    repeatable: bool,
     description: ?[]const u8 = null,
     name: []const u8,
     arguments: ?[]ArgumentDefinition,

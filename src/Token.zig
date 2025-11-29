@@ -42,6 +42,7 @@ pub const TokenType: type = enum(u8) {
     keyword_true,
     keyword_false,
     keyword_null,
+    keyword_repeatable,
 
     // special
     unknown,

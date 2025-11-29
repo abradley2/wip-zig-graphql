@@ -257,6 +257,7 @@ pub fn nextToken(lexer: *Lexer) Error!Token {
             .{ "null", TokenType.keyword_null },
             .{ "schema", TokenType.keyword_schema },
             .{ "extend", TokenType.keyword_extend },
+            .{ "repeatable", TokenType.keyword_repeatable },
         });
 
         if (keyword_map.get(token.token_text)) |keyword_token_type| {

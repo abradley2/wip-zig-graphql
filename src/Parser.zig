@@ -408,7 +408,7 @@ test "parseDirectiveDeclaration" {
             \\@my_directive(
             \\  arg_one: Boolean
             \\  arg_two: String, arg_three: [Boolean!]
-            \\) on FIELD_DEFINITION | 
+            \\) repeatable on FIELD_DEFINITION | 
             \\     ARGUMENT_DEFINITION | 
             \\     INPUT_FIELD_DEFINITION | ENUM_VALUE
         ;
@@ -452,6 +452,12 @@ fn parseDirectiveDeclaration(
     const argument_definitions: ?[]ast.ArgumentDefinition = try parseArgumentDefinitions(parser, allocator);
     errdefer if (argument_definitions) |defs| destroyArgumentDefinitions(defs, allocator);
 
+    var repeatable: bool = false;
+    if (parser.current_token.token_type == .keyword_repeatable) {
+        repeatable = true;
+        try parser.advance();
+    }
+
     if (parser.current_token.token_type == .keyword_on) {
         try parser.advance();
     } else {
@@ -489,6 +495,7 @@ fn parseDirectiveDeclaration(
     }
 
     return ast.DirectiveDeclaration{
+        .repeatable = repeatable,
         .name = directive_ident,
         .arguments = argument_definitions,
         .targets = try directive_locations.toOwnedSlice(allocator),
