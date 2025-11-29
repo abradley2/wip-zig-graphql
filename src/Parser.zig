@@ -302,6 +302,70 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
     return try argument_definitions.toOwnedSlice(allocator);
 }
 
+fn parseIdentifier(parser: *Parser, wanted: []const u8) ![]const u8 {
+    if (parser.current_token.token_type == .identifier) {
+        const identifier = parser.current_token.token_text;
+        try parser.advance();
+        return identifier;
+    }
+    parser.error_info.wanted = wanted;
+    return error.UnexpectedToken;
+}
+
+fn parseKeyword(parser: *Parser, keyword: TokenType) !?struct {} {
+    if (parser.current_token.token_type == keyword) {
+        try parser.advance();
+        return .{};
+    }
+    return null;
+}
+
+test "parseObjectDefinition" {
+    {
+        const input =
+            \\type MyType 
+            \\  implements 
+            \\    One &
+            \\    Two 
+            \\  @deprecated(reason: "old")
+            \\  @example
+            \\{
+            \\  foo: String
+            \\  bar: [Bar!]!
+            \\}
+        ;
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const object_type_definition =
+            try parseObjectTypeDefinition(&parser, std.testing.allocator) orelse
+            return error.UnexpectedNull;
+
+        defer destroyObjectTypeDefinition(object_type_definition, std.testing.allocator);
+    }
+}
+
+fn parseObjectTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.ObjectTypeDefinition {
+    _ = try parseKeyword(parser, .keyword_type) orelse return null;
+
+    const name = try parseIdentifier(parser, "name for type");
+
+    const implements_opt = try parseImplements(parser, allocator);
+
+    const directives_opt = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    const fields_opt = try parseFields(parser, allocator);
+    errdefer if (fields_opt) |fields| destroyFields(fields, allocator);
+
+    return ast.ObjectTypeDefinition{
+        .name = name,
+        .implements = implements_opt,
+        .directives = directives_opt,
+        .fields = fields_opt,
+    };
+}
+
 fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
     var description: ?[]const u8 = null;
     if (parser.current_token.token_type == .string) {
@@ -1139,4 +1203,10 @@ fn destroyTypeDeclaration(type_declaration: ast.TypeDeclaration, allocator: Allo
         .input_definition => |fields| destroyFields(fields, allocator),
         else => {},
     }
+}
+
+fn destroyObjectTypeDefinition(object_type_definition: ast.ObjectTypeDefinition, allocator: Allocator) void {
+    if (object_type_definition.directives) |directives| destroyDirectives(directives, allocator);
+    if (object_type_definition.fields) |fields| destroyFields(fields, allocator);
+    if (object_type_definition.implements) |implements| allocator.free(implements);
 }

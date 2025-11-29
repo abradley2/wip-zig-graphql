@@ -8,6 +8,44 @@ pub const SchemaDeclaration: type = union(enum) {
     type_declaration: TypeDeclaration,
 };
 
+pub const Declaration: type = struct {
+    extends: bool,
+    description: []const u8,
+    definition: Definition,
+};
+
+pub const Definition: type = union(u8) {
+    interface: InterfaceTypeDefinition,
+    input: InputTypeDefinition,
+    object: ObjectTypeDefinition,
+};
+
+pub const InterfaceTypeDefinition: type = struct {
+    name: []const u8,
+    implements: ?[]NamedType,
+    directives: ?[]Directive,
+    fields: ?[]Field,
+};
+
+pub const ObjectTypeDefinition: type = struct {
+    name: []const u8,
+    implements: ?[]NamedType,
+    directives: ?[]Directive,
+    fields: ?[]Field,
+};
+
+pub const InputTypeDefinition: type = struct {
+    name: []const u8,
+    directives: ?[]Directive,
+    fields: ?[]Field,
+};
+
+pub const EnumTypeDefinition: type = struct {
+    name: []const u8,
+    directives: ?[]Directive,
+    entries: ?[]EnumEntryDefinition,
+};
+
 pub const DirectiveDeclaration: type = struct {
     repeatable: bool,
     description: ?[]const u8 = null,
