@@ -302,15 +302,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
             try parser.advance();
         }
 
-        const argument_name = switch (parser.current_token.token_type) {
-            .identifier => parser.current_token.token_text,
-            else => {
-                parser.error_info.wanted = "name for argument definition";
-                return error.UnexpectedToken;
-            },
-        };
-
-        try parser.advance();
+        const argument_name = try parseIdentifier(parser, "name for argument definition");
 
         _ = try parseKeyword(parser, .colon) orelse {
             parser.error_info.wanted = "colon : following argument name";
@@ -340,9 +332,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
 
         if (try parseKeyword(parser, .comma)) |_| continue;
 
-        if (parser.lexer.newline_on_last_read) {
-            continue;
-        }
+        if (parser.lexer.newline_on_last_read) continue;
 
         parser.error_info.wanted = "Either an indent or a ',' comma followed by another argument, or a closing ) paren";
         return error.UnexpectedToken;
@@ -943,22 +933,12 @@ fn parseValuePairs(parser: *Parser, allocator: Allocator) Error!?[]ast.ValuePair
 }
 
 fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
-    const key_identifier = switch (parser.current_token.token_type) {
-        .identifier => parser.current_token.token_text,
-        else => {
-            parser.error_info.wanted = "identifier key for object key/value pair";
-            return error.UnexpectedToken;
-        },
-    };
+    const key_identifier = try parseIdentifier(parser, "identifier key for object key/value pair");
 
-    try parser.advance();
-
-    if (parser.current_token.token_type == .colon) {
-        try parser.advance();
-    } else {
+    _ = try parseKeyword(parser, .colon) orelse {
         parser.error_info.wanted = "colon seperator for object key/value pair";
         return error.UnexpectedToken;
-    }
+    };
 
     const value = try parseValue(parser, allocator);
 
