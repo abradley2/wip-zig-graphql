@@ -917,6 +917,29 @@ fn parseIntValue(parser: *Parser) Error!?i64 {
     return null;
 }
 
+test "parseFloatValue" {
+    {
+        const input = "1.23e4";
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const float_value = try parseFloatValue(&parser);
+
+        try std.testing.expectEqual(12300.0, float_value);
+    }
+
+    {
+        const input = "3.7e-5";
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const float_value = try parseFloatValue(&parser);
+
+        try std.testing.expectEqual(0.000037, float_value);
+    }
+}
+
 fn parseFloatValue(parser: *Parser) Error!?f64 {
     if (parser.current_token.token_type == .number and
         std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))
