@@ -287,6 +287,7 @@ test "parseArgumentDefinitions" {
     {
         const input =
             \\ (
+            \\   "description"
             \\   subtaskId: String!
             \\   filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3]
             \\ )
@@ -868,45 +869,15 @@ test "parseValue" {
 }
 
 fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
-    if (parser.current_token.token_type == .number) {
-        if (std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.')) {
-            const float_value = std.fmt.parseFloat(f64, parser.current_token.token_text) catch {
-                parser.error_info.wanted = "floating point number";
-                return error.UnexpectedToken;
-            };
+    if (try parseStringValue(parser)) |string_value| return .{ .string_type = string_value };
 
-            try parser.advance();
+    if (try parseFloatValue(parser)) |float_value| return .{ .float_type = float_value };
 
-            return ast.Value{
-                .float_type = float_value,
-            };
-        }
+    if (try parseIntValue(parser)) |int_value| return .{ .int_type = int_value };
 
-        const int_value = std.fmt.parseInt(i64, parser.current_token.token_text, 10) catch {
-            parser.error_info.wanted = "integer number";
-            return error.UnexpectedToken;
-        };
+    if (try parseListValue(parser, allocator)) |list_value| return .{ .list_type = list_value };
 
-        try parser.advance();
-
-        return ast.Value{
-            .int_type = int_value,
-        };
-    }
-
-    if (parser.current_token.token_type == .string) {
-        const string_value = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1];
-
-        try parser.advance();
-
-        return ast.Value{
-            .string_type = string_value,
-        };
-    }
-
-    if (try parseListValue(parser, allocator)) |list_value| return ast.Value{ .list_type = list_value };
-
-    if (try parseValuePairs(parser, allocator)) |value_pairs| return ast.Value{ .object_type = value_pairs };
+    if (try parseValuePairs(parser, allocator)) |value_pairs| return .{ .object_type = value_pairs };
 
     if (try parseKeyword(parser, .keyword_true)) |_| return .{ .boolean_type = true };
 
@@ -916,6 +887,50 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
     parser.error_info.wanted = "float, bool, null, string, list or object value";
     return error.UnexpectedToken;
+}
+
+fn parseStringValue(parser: *Parser) Error!?[]const u8 {
+    if (parser.current_token.token_type == .string) {
+        const string_value = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1];
+
+        try parser.advance();
+
+        return string_value;
+    }
+    return null;
+}
+
+fn parseIntValue(parser: *Parser) Error!?i64 {
+    if (parser.current_token.token_type == .number and
+        !std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))
+    {
+        const int_value = std.fmt.parseInt(i64, parser.current_token.token_text, 10) catch {
+            parser.error_info.wanted = "integer number";
+            return error.UnexpectedToken;
+        };
+
+        try parser.advance();
+
+        return int_value;
+    }
+
+    return null;
+}
+
+fn parseFloatValue(parser: *Parser) Error!?f64 {
+    if (parser.current_token.token_type == .number and
+        std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))
+    {
+        const float_value = std.fmt.parseFloat(f64, parser.current_token.token_text) catch {
+            parser.error_info.wanted = "floating point number";
+            return error.UnexpectedToken;
+        };
+
+        try parser.advance();
+
+        return float_value;
+    }
+    return null;
 }
 
 fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
