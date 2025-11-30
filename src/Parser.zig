@@ -283,6 +283,30 @@ test "parseArgumentDefinitions" {
 
         try std.testing.expectEqual(3, argument_definitions.len);
     }
+
+    {
+        const input =
+            \\ (
+            \\   subtaskId: String!
+            \\   filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3]
+            \\ )
+        ;
+
+        var lexer: Lexer = .init(input);
+        var parser: Parser = try .init(&lexer);
+
+        const argument_definitions = (try parseArgumentDefinitions(&parser, std.testing.allocator)) orelse
+            return error.UnexpectedNull;
+
+        defer {
+            for (argument_definitions) |argument_definition| {
+                destroyArgumentDefinition(argument_definition, std.testing.allocator);
+            }
+            std.testing.allocator.free(argument_definitions);
+        }
+
+        try std.testing.expectEqual(3, argument_definitions.len);
+    }
 }
 
 fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.ArgumentDefinition {
@@ -302,31 +326,10 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
             try parser.advance();
         }
 
-        const argument_name = try parseIdentifier(parser, "name for argument definition");
+        var argument_definition = try parseArgumentDefinition(parser, allocator);
+        argument_definition.description = description;
 
-        _ = try parseKeyword(parser, .colon) orelse {
-            parser.error_info.wanted = "colon : following argument name";
-            return error.UnexpectedToken;
-        };
-
-        const graphql_type = try parseGraphQlType(parser, allocator);
-        errdefer destroyGraphQlType(graphql_type, allocator);
-
-        var default_value: ?ast.Value = null;
-        if (try parseKeyword(parser, .equals)) |_| {
-            default_value = try parseValue(parser, allocator);
-        }
-
-        const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
-        errdefer if (directives) |d| destroyDirectives(d, allocator);
-
-        try argument_definitions.append(allocator, ast.ArgumentDefinition{
-            .description = description,
-            .default = default_value,
-            .name = argument_name,
-            .graphql_type = graphql_type,
-            .directives = directives,
-        });
+        try argument_definitions.append(allocator, argument_definition);
 
         if (try parseKeyword(parser, .r_paren)) |_| break;
 
@@ -339,6 +342,34 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
     }
 
     return try argument_definitions.toOwnedSlice(allocator);
+}
+
+fn parseArgumentDefinition(parser: *Parser, allocator: Allocator) Error!ast.ArgumentDefinition {
+    const name = try parseIdentifier(parser, "name for argument definition");
+
+    _ = try parseKeyword(parser, .colon) orelse {
+        parser.error_info.wanted = "colon : following argument name";
+        return error.UnexpectedToken;
+    };
+
+    const graphql_type = try parseGraphQlType(parser, allocator);
+    errdefer destroyGraphQlType(graphql_type, allocator);
+
+    var default_value: ?ast.Value = null;
+    if (try parseKeyword(parser, .equals)) |_| {
+        default_value = try parseValue(parser, allocator);
+    }
+
+    const directives_opt: ?[]ast.Directive = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    return ast.ArgumentDefinition{
+        .default = default_value,
+        .description = null,
+        .directives = directives_opt,
+        .graphql_type = graphql_type,
+        .name = name,
+    };
 }
 
 fn parseIdentifier(parser: *Parser, wanted: []const u8) ![]const u8 {
