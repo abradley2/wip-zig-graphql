@@ -893,66 +893,9 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
         };
     }
 
-    if (parser.current_token.token_type == .l_bracket) {
-        try parser.advance();
+    if (try parseListValue(parser, allocator)) |list_value| return ast.Value{ .list_type = list_value };
 
-        var values: ArrayList(ast.Value) = .empty;
-        errdefer values.deinit(allocator);
-
-        while (parser.current_token.token_type != .r_bracket) {
-            const value = try parseValue(parser, allocator);
-            errdefer destroyValue(value, allocator);
-
-            try values.append(allocator, value);
-
-            if (parser.current_token.token_type == .comma) {
-                try parser.advance();
-                continue;
-            }
-
-            if (parser.current_token.token_type == .r_bracket) {
-                try parser.advance();
-                break;
-            }
-
-            parser.error_info.wanted = "expected either comma ',' followed by another item, or ending bracket ]";
-            return error.UnexpectedToken;
-        }
-
-        return ast.Value{
-            .list_type = try values.toOwnedSlice(allocator),
-        };
-    }
-
-    var pairs: ArrayList(ast.ValuePair) = .empty;
-    errdefer pairs.deinit(allocator);
-
-    if (parser.current_token.token_type == .l_brace) {
-        try parser.advance();
-
-        while (parser.current_token.token_type != .r_brace) {
-            const key_identifier, const value = try parseValuePair(parser, allocator);
-
-            try pairs.append(allocator, .{ .key = key_identifier, .value = value });
-
-            if (parser.current_token.token_type == .comma) {
-                try parser.advance();
-                continue;
-            }
-
-            if (parser.current_token.token_type == .r_brace) {
-                try parser.advance();
-                break;
-            }
-
-            parser.error_info.wanted = "either comma , followed by another pair, or ending } brace";
-            return error.UnexpectedToken;
-        }
-
-        return ast.Value{
-            .object_type = try pairs.toOwnedSlice(allocator),
-        };
-    }
+    if (try parseValuePairs(parser, allocator)) |value_pairs| return ast.Value{ .object_type = value_pairs };
 
     if (try parseKeyword(parser, .keyword_true)) |_| return .{ .boolean_type = true };
 
@@ -962,6 +905,51 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
 
     parser.error_info.wanted = "float, bool, null, string, list or object value";
     return error.UnexpectedToken;
+}
+
+fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
+    _ = try parseKeyword(parser, .l_bracket) orelse return null;
+
+    var values: ArrayList(ast.Value) = .empty;
+    errdefer values.deinit(allocator);
+
+    while (parser.current_token.token_type != .r_bracket) {
+        const value = try parseValue(parser, allocator);
+        errdefer destroyValue(value, allocator);
+
+        try values.append(allocator, value);
+
+        if (try parseKeyword(parser, .comma)) |_| continue;
+
+        if (try parseKeyword(parser, .r_bracket)) |_| break;
+
+        parser.error_info.wanted = "expected either comma ',' followed by another item, or ending bracket ]";
+        return error.UnexpectedToken;
+    }
+
+    return try values.toOwnedSlice(allocator);
+}
+
+fn parseValuePairs(parser: *Parser, allocator: Allocator) Error!?[]ast.ValuePair {
+    _ = try parseKeyword(parser, .l_brace) orelse return null;
+
+    var pairs: ArrayList(ast.ValuePair) = .empty;
+    errdefer pairs.deinit(allocator);
+
+    while (parser.current_token.token_type != .r_brace) {
+        const key_identifier, const value = try parseValuePair(parser, allocator);
+
+        try pairs.append(allocator, .{ .key = key_identifier, .value = value });
+
+        if (try parseKeyword(parser, .comma)) |_| continue;
+
+        if (try parseKeyword(parser, .r_brace)) |_| break;
+
+        parser.error_info.wanted = "either comma , followed by another pair, or ending } brace";
+        return error.UnexpectedToken;
+    }
+
+    return try pairs.toOwnedSlice(allocator);
 }
 
 fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
