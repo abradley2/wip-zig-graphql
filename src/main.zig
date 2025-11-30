@@ -1,43 +1,21 @@
 const std = @import("std");
 const graphql = @import("graphql");
 
-const Lexer = @import("./Lexer.zig");
-const Parser = @import("./Parser.zig");
+const Lexer = graphql.Lexer;
+const Parser = graphql.Parser;
 
 test "all tests" {
     std.testing.refAllDecls(@This());
 }
 
 pub fn main() !void {
-    const input = "scalar MyScalar";
+    const input = @embedFile("test_fixtures/sdl_kitchen_sink.graphql");
     var lexer: Lexer = .init(input);
-    const parser: Parser = try .init(&lexer);
-    _ = parser;
+    var parser: Parser = try .init(&lexer);
 
-    const nullable: ?u32 = null;
-    const some_num = nullable orelse ret: {
-        std.debug.print("This should not be null!\n", .{});
-        break :ret 1;
-    };
+    var arena_allocator: std.heap.ArenaAllocator = .init(std.heap.page_allocator);
+    defer arena_allocator.deinit();
+    const allocator = arena_allocator.allocator();
 
-    std.debug.print("Some num = {d}\n", .{some_num});
-}
-
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    const Context = struct {
-        fn testOne(context: @This(), input: []const u8) anyerror!void {
-            _ = context;
-            // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-            try std.testing.expect(!std.mem.eql(u8, "canyoufindme", input));
-        }
-    };
-    try std.testing.fuzz(Context{}, Context.testOne, .{});
+    _ = try parser.parseSchemaDocument(allocator);
 }

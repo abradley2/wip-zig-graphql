@@ -94,6 +94,7 @@ pub const Field: type = struct {
     graphql_type: GraphQlType,
     arguments: ?[]ArgumentDefinition,
     directives: ?[]Directive,
+    default_value: ?Value,
 };
 
 pub const GraphQlType: type = struct {

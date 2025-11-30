@@ -84,10 +84,10 @@ test "schema definition language kitchen sink" {
         std.testing.allocator.free(schema_document);
     }
 
-    try std.testing.expectEqual(1, schema_document.len);
+    try std.testing.expectEqual(38, schema_document.len);
 }
 
-fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDeclaration {
+pub fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDeclaration {
     var schema_declarations: ArrayList(ast.SchemaDeclaration) = .empty;
     errdefer {
         for (schema_declarations.items) |schema_declaration| destroySchemaDeclaration(schema_declaration, allocator);
@@ -736,6 +736,8 @@ fn parseDirectiveTargets(parser: *Parser, allocator: Allocator) Error![]ast.Dire
     var directive_targets: ArrayList(ast.DirectiveTarget) = .empty;
     errdefer directive_targets.deinit(allocator);
 
+    _ = try parseKeyword(parser, .pipe);
+
     while (true) {
         const directive_target_name = try parseIdentifier(parser, "Expecting identifier for graphql directive location");
 
@@ -962,7 +964,7 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     return error.UnexpectedToken;
 }
 
-pub fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
+fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
     const key_identifier = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
         else => {
@@ -1078,6 +1080,9 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
 
     const field_name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
+        .keyword_mutation => parser.current_token.token_text,
+        .keyword_subscription => parser.current_token.token_text,
+        .keyword_query => parser.current_token.token_text,
         else => {
             parser.error_info.wanted = "field name identifier";
             return error.UnexpectedToken;
@@ -1099,6 +1104,13 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
     const graphql_type = try parseGraphQlType(parser, allocator);
     errdefer destroyGraphQlType(graphql_type, allocator);
 
+    var default_value_opt: ?ast.Value = null;
+    errdefer if (default_value_opt) |value| destroyValue(value, allocator);
+    if (parser.current_token.token_type == .equals) {
+        try parser.advance();
+        default_value_opt = try parseValue(parser, allocator);
+    }
+
     const directives: ?[]ast.Directive = try parseDirectives(parser, allocator);
 
     return ast.Field{
@@ -1107,6 +1119,7 @@ fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
         .graphql_type = graphql_type,
         .arguments = argument_definitions,
         .directives = directives,
+        .default_value = default_value_opt,
     };
 }
 

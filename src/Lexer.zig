@@ -331,12 +331,16 @@ fn readString(lexer: *Lexer) error{UnterminatedString}![]const u8 {
 fn readNumber(lexer: *Lexer) []const u8 {
     var end = lexer.read_position;
 
+    var number_position: usize = 0;
     while (end < lexer.input.len and
         (std.ascii.isDigit(lexer.input[end]) or
             lexer.input[end] == '-' or
-            lexer.input[end] == '.'))
+            lexer.input[end] == '.' or
+            (number_position > 0 and lexer.input[end] == 'e') or
+            (number_position > 0 and lexer.input[end] == 'E')))
     {
         end += 1;
+        number_position += 1;
     }
 
     lexer.read_position = end;

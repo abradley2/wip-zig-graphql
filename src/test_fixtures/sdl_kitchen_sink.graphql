@@ -1,3 +1,8 @@
+"""This is a description of the schema as a whole."""
+schema {
+  query: QueryType
+  mutation: MutationType
+}
 
 """
 This is a description
@@ -155,4 +160,3 @@ extend schema @onSchema
 extend schema @onSchema {
   subscription: SubscriptionType
 }
-
