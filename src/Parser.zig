@@ -312,20 +312,16 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
 
         try parser.advance();
 
-        if (parser.current_token.token_type == .colon) {
-            try parser.advance();
-        } else {
+        _ = try parseKeyword(parser, .colon) orelse {
             parser.error_info.wanted = "colon : following argument name";
             return error.UnexpectedToken;
-        }
+        };
 
         const graphql_type = try parseGraphQlType(parser, allocator);
         errdefer destroyGraphQlType(graphql_type, allocator);
 
         var default_value: ?ast.Value = null;
-        if (parser.current_token.token_type == .equals) {
-            try parser.advance();
-
+        if (try parseKeyword(parser, .equals)) |_| {
             default_value = try parseValue(parser, allocator);
         }
 
@@ -340,15 +336,9 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
             .directives = directives,
         });
 
-        if (parser.current_token.token_type == .r_paren) {
-            try parser.advance();
-            break;
-        }
+        if (try parseKeyword(parser, .r_paren)) |_| break;
 
-        if (parser.current_token.token_type == .comma) {
-            try parser.advance();
-            continue;
-        }
+        if (try parseKeyword(parser, .comma)) |_| continue;
 
         if (parser.lexer.newline_on_last_read) {
             continue;
