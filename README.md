@@ -1,9 +1,16 @@
 # WIP - Zig GraphQL
 
+**This project primarily lives on [Codeberg](https://codeberg.org/abradley2/wip-zig-graphql),
+for many of the [same reasons many other projects are](https://ziglang.org/news/migrating-from-github-to-codeberg/).**
+
+**The Github repository is just a mirror including only the master branch**
+
+# Purpose
+
 Work in progress Zig GraphQL library
 
 This is a complete re-imagining of typical GraphQL implementations
-with the aim of "putting the Graph back in GraphQL"
+with the aim of "putting the Graph back in GraphQL" 
 
 # Graph Data Structure
 
