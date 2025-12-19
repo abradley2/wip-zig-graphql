@@ -24,6 +24,7 @@ test "Lexer Basics" {
     const input =
         \\(hello #some comment
         \\  # another comment
+        \\  # more comments
         \\ ,world "again"}a
         \\"""t
         \\  the sun says "hello"
@@ -277,7 +278,7 @@ fn readComment(lexer: *Lexer) void {
         end += 1;
     }
 
-    lexer.read_position = end + 1;
+    lexer.read_position = end;
 }
 
 fn readMultilineString(lexer: *Lexer) error{UnterminatedString}![]const u8 {

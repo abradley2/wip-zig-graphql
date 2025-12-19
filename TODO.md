@@ -1,2 +1,1 @@
-1. comments don't appear to be working every time
-2. need to support fields having defaults
+1. Only consider something an edge when it has the vertex directive

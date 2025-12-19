@@ -900,6 +900,13 @@ fn parseStringValue(parser: *Parser) Error!?[]const u8 {
     return null;
 }
 
+test "parseIntValue" {
+    {
+        const input = "1234";
+        _ = input;
+    }
+}
+
 fn parseIntValue(parser: *Parser) Error!?i64 {
     if (parser.current_token.token_type == .number and
         !std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))

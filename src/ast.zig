@@ -1,6 +1,28 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+pub const OperationType: type = enum {
+    query,
+    mutation,
+    subscription,
+};
+
+pub const Operation: type = struct {
+    operation_type: OperationType,
+    name: ?[]const u8,
+    directives: ?[]Directive,
+    selection_set: []SelectionField,
+    variables: ?[]ArgumentDefinition,
+};
+
+pub const SelectionField: type = struct {
+    label: ?[]const u8,
+    arguments: ?[]ValuePair,
+    directives: ?[]Directive,
+    name: []const u8,
+    selection_set: ?[]SelectionField,
+};
+
 pub const SchemaDocument: type = []SchemaDeclaration;
 
 pub const SchemaDeclaration: type = struct {
@@ -102,6 +124,12 @@ pub const GraphQlType: type = struct {
     is_nullable: bool,
     child: ?*GraphQlType,
     named_type: ?[]const u8,
+
+    pub fn name(self: GraphQlType) []const u8 {
+        if (self.named_type) |n| return n;
+        if (self.child) |c| return c.name();
+        @panic("Invalid GraphQlType");
+    }
 };
 
 pub const DirectiveTarget: type = enum {
@@ -147,6 +175,7 @@ pub const ValueType: type = enum {
     null_type,
     object_type,
     list_type,
+    variable_type,
 };
 
 pub const ValuePair: type = struct {
@@ -162,4 +191,5 @@ pub const Value: type = union(ValueType) {
     null_type: void,
     object_type: []ValuePair,
     list_type: []Value,
+    variable_type: []const u8,
 };

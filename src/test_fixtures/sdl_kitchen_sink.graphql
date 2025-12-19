@@ -1,14 +1,18 @@
+# one 
+# two
 """This is a description of the schema as a whole."""
 schema {
   query: QueryType
   mutation: MutationType
 }
 
+# three
 """
 This is a description
 of the \`Foo\` type.
 """
-type Foo implements Bar & Baz & Two {
+type Foo implements Bar & Baz & Two { # four
+  # five
   "Description of the \`one\` field."
   one: Type
   """
