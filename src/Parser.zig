@@ -787,6 +787,8 @@ test "parseFields" {
         try std.testing.expectEqual(2, fields.len);
         try std.testing.expectEqualStrings("a", fields[0].name);
         try std.testing.expectEqualStrings("b", fields[1].name);
+        try std.testing.expectEqualStrings("Int", fields[0].graphql_type.name());
+        try std.testing.expectEqual(false, fields[0].graphql_type.is_nullable);
     }
 }
 

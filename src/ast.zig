@@ -120,14 +120,14 @@ pub const Field: type = struct {
 };
 
 pub const GraphQlType: type = struct {
-    is_list: bool,
-    is_nullable: bool,
-    child: ?*GraphQlType,
-    named_type: ?[]const u8,
+    is_list: bool = false,
+    is_nullable: bool = true,
+    child: ?*const GraphQlType = null,
+    named_type: ?[]const u8 = null,
 
     pub fn name(self: GraphQlType) []const u8 {
-        if (self.named_type) |n| return n;
         if (self.child) |c| return c.name();
+        if (self.named_type) |n| return n;
         @panic("Invalid GraphQlType");
     }
 };

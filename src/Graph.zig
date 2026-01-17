@@ -2,6 +2,10 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const ast = @import("./ast.zig");
+const json = std.json;
+const Value = json.Value;
+
+const ZigAst = std.zig.Ast;
 
 const Graph = @This();
 
@@ -18,14 +22,15 @@ pub fn resolveOperation(graph: *Graph, allocator: Allocator, operation: ast.Oper
     OutOfMemory,
     UndefinedOperation,
     UnknownField,
-}!void {
+}!json.Value {
     const edges = switch (operation.operation_type) {
         .query => graph.query_edges,
         .mutation => graph.mutation_edges,
         .subscription => graph.subscription_edges,
     } orelse return error.UndefinedOperation;
 
-    try resolveSelection(allocator, operation.selection_set, edges);
+    const return_object = try resolveSelection(allocator, operation.selection_set, edges);
+    return .{ .object = return_object };
 }
 
 pub const ResolvedValue: type = struct {};
@@ -37,10 +42,10 @@ pub const Resolver: type = struct {
 pub fn resolveSelection(allocator: Allocator, selection_set: []ast.SelectionField, edges: []Edge) error{
     OutOfMemory,
     UnknownField,
-}!void {
+}!json.ObjectMap {
     for (selection_set) |selection| {
         const edge = ret: {
-            for (edges) |edge| {
+            for (edges) |*edge| {
                 if (std.mem.eql(edge.left, selection.name)) {
                     break :ret edge;
                 }
@@ -48,7 +53,8 @@ pub fn resolveSelection(allocator: Allocator, selection_set: []ast.SelectionFiel
             break :ret null;
         } orelse return error.UnknownField;
 
-        _ = edge;
+        const value = try Edge.toValue(&edge, allocator);
+        _ = value;
         // use selection.name and edge to call the resolver
 
         if (selection.selection_set) |next_selection| {
@@ -58,12 +64,58 @@ pub fn resolveSelection(allocator: Allocator, selection_set: []ast.SelectionFiel
     }
 }
 
+pub fn Todo(edge: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value {
+    if (std.mem.eql(u8, edge.left, "Query")) {
+        if (std.mem.eql(edge.name, "todos")) {
+            var todo_array: json.Array = .init(allocator);
+
+            var object_map_one: json.ObjectMap = .init(allocator);
+            object_map_one.put("id", json.Value{ .integer = 456 });
+
+            var object_map_two: json.ObjectMap = .init(allocator);
+            object_map_two.put("id", json.Value{ .integer = 789 });
+
+            try todo_array.append(object_map_one);
+            try todo_array.append(object_map_two);
+
+            return json.Value{ .array = todo_array };
+        }
+    }
+    if (std.mem.eql(u8, edge.left, "User")) {
+        if (std.mem.eql(u8, edge.name, "primary_task")) {
+            var object_map: json.ObjectMap = .init(allocator);
+            object_map.put("id", json.Value{ .integer = 1234 });
+            return json.Value{ .object = object_map };
+        }
+    }
+    if (std.mem.eql(u8, edge.left, "Todo")) {
+        if (std.mem.eql(u8, edge.name, "sub_task")) {
+            return json.Value{.null};
+        }
+    }
+    return json.Value{.null};
+}
+
 pub const Edge: type = struct {
-    name: []const u8,
     left: []const u8,
-    arguments: []ast.ArgumentDefinition,
+    name: []const u8,
+    arguments: ?[]ast.ArgumentDefinition = null,
     right: ast.GraphQlType,
+    pub fn toValue(self: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value {
+        if (std.mem.eql(self.right.name(), "Todo")) {
+            return try Todo(self, allocator);
+        }
+        return json.Value{.null};
+    }
 };
+
+pub fn codegen(
+    graph: *Graph,
+    allocator: Allocator,
+) error{OutOfMemory}!void {
+    _ = graph;
+    _ = allocator;
+}
 
 pub fn init(
     graph: *Graph,
@@ -80,7 +132,7 @@ pub fn init(
     const schema_definition_opt: ?ast.SchemaDefinition = ret: {
         for (schema_document) |decl| {
             switch (decl.definition) {
-                .schema_definition => |v| v,
+                .schema_definition => |v| break :ret v,
                 else => continue,
             }
         }
@@ -90,18 +142,18 @@ pub fn init(
 
     if (schema_definition_opt) |schema_definition| {
         const fields = schema_definition.fields orelse {
-            graph.err_msg = try std.fmt.bufPrint(graph.err_msg_buffer, "schema declaration has no fields", .{});
-            return error.InvalidSchema;
+            _ = std.fmt.bufPrint(&graph.err_msg_buffer, "schema declaration has no fields", .{}) catch "";
+            return error.InvalidSchemaDocument;
         };
 
         for (fields) |field| {
-            if (std.mem.eql(field.name, "query")) {
+            if (std.mem.eql(u8, field.name, "query")) {
                 query_type_name = field.graphql_type.name();
             }
-            if (std.mem.eql(field.name, "mutation")) {
+            if (std.mem.eql(u8, field.name, "mutation")) {
                 mutation_type_name = field.graphql_type.name();
             }
-            if (std.mem.eql(field.name, "subscription")) {
+            if (std.mem.eql(u8, field.name, "subscription")) {
                 subscription_type_name = field.graphql_type.name();
             }
         }
@@ -116,39 +168,39 @@ pub fn init(
             .type_definition => |v| v,
             else => continue,
         };
-        if (std.mem.eql(type_definition.name, query_type_name)) {
+        if (std.mem.eql(u8, type_definition.name, query_type_name)) {
             query_type_definition = type_definition;
         }
-        if (std.mem.eql(type_definition.name, mutation_type_name)) {
+        if (std.mem.eql(u8, type_definition.name, mutation_type_name)) {
             mutation_type_definition = type_definition;
         }
-        if (std.mem.eql(type_definition.name, subscription_type_definition)) {
+        if (std.mem.eql(u8, type_definition.name, subscription_type_name)) {
             subscription_type_definition = type_definition;
         }
     }
 
     if (query_type_definition) |def| {
         const query_fields = def.fields orelse {
-            graph.err_msg = std.fmt.bufPrint(graph.err_msg_buffer, "Query type has no fields", .{});
+            graph.err_msg = std.fmt.bufPrint(&graph.err_msg_buffer, "Query type has no fields", .{}) catch "";
             return error.InvalidSchemaDocument;
         };
-        graph.query_edges = fieldsToEdges(allocator, def.name, query_fields);
+        graph.query_edges = try fieldsToEdges(allocator, def.name, query_fields);
     }
 
     if (mutation_type_definition) |def| {
         const mutation_fields = def.fields orelse {
-            graph.err_msg = std.fmt.bufPrint(graph.err_msg_buffer, "Mutation type has no fields", .{});
+            graph.err_msg = std.fmt.bufPrint(&graph.err_msg_buffer, "Mutation type has no fields", .{}) catch "";
             return error.InvalidSchemaDocument;
         };
-        graph.mutation_edges = fieldsToEdges(allocator, def.name, mutation_fields);
+        graph.mutation_edges = try fieldsToEdges(allocator, def.name, mutation_fields);
     }
 
     if (query_type_definition) |def| {
         const query_fields = def.fields orelse {
-            graph.err_msg = std.fmt.bufPrint(graph.err_msg_buffer, "Subscription type has no fields", .{});
+            graph.err_msg = std.fmt.bufPrint(&graph.err_msg_buffer, "Subscription type has no fields", .{}) catch "";
             return error.InvalidSchemaDocument;
         };
-        graph.subscription_edges = fieldsToEdges(allocator, def.name, query_fields);
+        graph.subscription_edges = try fieldsToEdges(allocator, def.name, query_fields);
     }
 }
 
@@ -160,7 +212,7 @@ fn fieldsToEdges(allocator: Allocator, name: []const u8, fields: []ast.Field) er
         try edges.append(allocator, Edge{
             .name = name,
             .left = field.name,
-            .arguments = field.arguments,
+            .arguments = field.arguments orelse &[_]ast.ArgumentDefinition{},
             .right = field.graphql_type,
         });
     }
