@@ -15,11 +15,13 @@ with the aim of "putting the Graph back in GraphQL"
 # Graph Data Structure
 
 The underlying Data Structure of a Graph is not lost as a concept. 
+Types are vertices, fields are edges.
 
 # The focus is on the Vertex, not the Edge
 
-Resolvers are not for fields, they are for types. Fields are modifiers to types. 
-An accessed Vertex knows about its Edge.
-
+"Resolvers" are not for fields, they are for types. GraphQL represents a
+multigraph in which there may be multiple edges between two vertices. By focusing
+on the types over fields our implementation becomes more organized and less
+repetitive.
 
 

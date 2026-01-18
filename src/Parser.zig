@@ -87,6 +87,64 @@ test "schema definition language kitchen sink" {
     try std.testing.expectEqual(38, schema_document.len);
 }
 
+test "parseQueryDocument" {
+    const input =
+        \\getTodos(filterCompleted: true) {
+        \\  id
+        \\  name
+        \\  completed
+        \\}
+    ;
+
+    var lexer: Lexer = .init(input);
+    var parser: Parser = try .init(&lexer);
+
+    const query_document = parseQueryDocument(&parser, std.testing.allocator) catch |err| {
+        std.debug.print("Error parsing document, got:\n{s}\n\nwanted:\n{s}", .{
+            parser.lexer.input[parser.lexer.position..],
+            parser.error_info.wanted,
+        });
+        return err;
+    };
+    defer destroyOperations(query_document, std.testing.allocator);
+
+    try std.testing.expectEqual(1, query_document.len);
+
+    const root_operation = query_document[0];
+
+    try std.testing.expectEqual(1, root_operation.selection_set.len);
+
+    const todos_query_field = root_operation.selection_set[0];
+
+    try std.testing.expectEqualStrings("getTodos", todos_query_field.name);
+}
+
+pub fn parseQueryDocument(parser: *Parser, allocator: Allocator) Error![]ast.Operation {
+    var operations: ArrayList(ast.Operation) = .empty;
+    errdefer {
+        for (operations.items) |operation| destroySelectionFields(operation.selection_set, allocator);
+        operations.deinit(allocator);
+    }
+
+    var root_operation_selections: ArrayList(ast.SelectionField) = .empty;
+
+    while (parser.current_token.token_type != .eof) {
+        const selection_field = try parseSelectionField(parser, allocator);
+        try root_operation_selections.append(allocator, selection_field);
+    }
+
+    const root_operation = ast.Operation{
+        .name = "query",
+        .directives = null,
+        .variables = null,
+        .operation_type = .query,
+        .selection_set = try root_operation_selections.toOwnedSlice(allocator),
+    };
+    try operations.append(allocator, root_operation);
+
+    return try operations.toOwnedSlice(allocator);
+}
+
 pub fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDeclaration {
     var schema_declarations: ArrayList(ast.SchemaDeclaration) = .empty;
     errdefer {
@@ -106,10 +164,10 @@ pub fn parseSelectionFields(parser: *Parser, allocator: Allocator) Error![]ast.S
     var selection_fields: ArrayList(ast.SelectionField) = .empty;
     errdefer {
         for (selection_fields.items) |selection_field| destroySelectionField(selection_field, allocator);
-        selection_fields.deinit(selection_fields, allocator);
+        selection_fields.deinit(allocator);
     }
 
-    try parseKeyword(parser, .l_brace) orelse {
+    _ = try parseKeyword(parser, .l_brace) orelse {
         parser.error_info.wanted = "left bracket for selection setl";
         return error.UnexpectedToken;
     };
@@ -134,7 +192,7 @@ pub fn parseSelectionFields(parser: *Parser, allocator: Allocator) Error![]ast.S
 pub fn parseSelectionField(parser: *Parser, allocator: Allocator) Error!ast.SelectionField {
     if (parser.current_token.token_type != .identifier) {
         parser.error_info.wanted = "identifier for selection field or label";
-        return .UnexpectedToken;
+        return Error.UnexpectedToken;
     }
 
     var label: ?[]const u8 = null;
@@ -153,7 +211,7 @@ pub fn parseSelectionField(parser: *Parser, allocator: Allocator) Error!ast.Sele
     };
     try parser.advance();
 
-    const arguments: ?[]ast.Argument = .empty;
+    var arguments: ?[]ast.Argument = null;
     errdefer {
         if (arguments) |args| destroyArguments(args, allocator);
     }
@@ -1074,30 +1132,34 @@ fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
 }
 
 fn parseSelectionFieldArguments(parser: *Parser, allocator: Allocator) Error!?[]ast.Argument {
-    var pairs: ArrayList(ast.ValuePair) = .empty;
-    errdefer pairs.deinit(allocator);
+    var arguments: ArrayList(ast.Argument) = .empty;
+    errdefer {
+        for (arguments.items) |argument| destroyArgument(argument, allocator);
+        arguments.deinit(allocator);
+    }
 
     while (true) {
-        const key_identifier, const value = try parseValuePair(parser, allocator);
+        const argument = try parseArgument(parser, allocator);
 
-        try pairs.append(allocator, .{ .key = key_identifier, .value = value });
+        try arguments.append(allocator, argument);
 
         if (try parseKeyword(parser, .comma)) |_| continue;
 
         break;
     }
 
-    return try pairs.toOwnedSlice(allocator);
+    return try arguments.toOwnedSlice(allocator);
 }
 
 fn parseArgument(parser: *Parser, allocator: Allocator) Error!ast.Argument {
     const name = switch (parser.current_token.token_type) {
-        .identifier => |v| v,
+        .identifier => parser.current_token.token_text,
         else => {
             parser.error_info.wanted = "name for argument";
             return Error.UnexpectedToken;
         },
     };
+    try parser.advance();
 
     if (parser.current_token.token_type != .colon) {
         parser.error_info.wanted = "colon between argument name and argument value";
@@ -1109,7 +1171,7 @@ fn parseArgument(parser: *Parser, allocator: Allocator) Error!ast.Argument {
         try parser.advance();
 
         const variable_name = switch (parser.current_token.token_type) {
-            .identifier => |v| v,
+            .identifier => parser.current_token.token_text,
             else => {
                 parser.error_info.wanted = "variable identifier";
                 return Error.UnexpectedToken;
@@ -1605,4 +1667,14 @@ fn destroySchemaDeclaration(schema_declaration: ast.SchemaDeclaration, allocator
         .union_definition => |definition| destroyUnionDefinition(definition, allocator),
         .scalar_definition => |definition| destroyScalarDefinition(definition, allocator),
     }
+}
+
+fn destroyOperation(operation: ast.Operation, allocator: Allocator) void {
+    destroySelectionFields(operation.selection_set, allocator);
+    if (operation.directives) |directives| destroyDirectives(directives, allocator);
+}
+
+fn destroyOperations(operations: []ast.Operation, allocator: Allocator) void {
+    for (operations) |operation| destroyOperation(operation, allocator);
+    allocator.free(operations);
 }

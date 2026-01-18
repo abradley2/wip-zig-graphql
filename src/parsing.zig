@@ -6,5 +6,7 @@ pub fn Lexer(
     comptime keyword_map: StaticStringMap(KeywordEnum),
     comptime isIdentifierFn: fn (ascii_char: u8, pos: usize) bool,
 ) type {
+    _ = keyword_map;
+    _ = isIdentifierFn;
     return .{};
 }

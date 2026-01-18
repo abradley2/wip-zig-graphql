@@ -246,7 +246,7 @@ pub const Argument: type = struct {
 };
 
 pub const ArgumentValue: type = union(enum(u8)) {
-    literal: ValueType,
+    literal: Value,
     variable: []const u8,
 };
 
