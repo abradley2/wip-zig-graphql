@@ -17,7 +17,7 @@ pub const Operation: type = struct {
 
 pub const SelectionField: type = struct {
     label: ?[]const u8,
-    arguments: ?[]ValuePair,
+    arguments: ?[]Argument,
     directives: ?[]Directive,
     name: []const u8,
     selection_set: ?[]SelectionField,
@@ -236,6 +236,18 @@ pub const DirectiveTarget: type = enum {
 
         return ssm.get(s);
     }
+};
+
+pub const Arguments: type = []Argument;
+
+pub const Argument: type = struct {
+    name: []const u8,
+    value: ArgumentValue,
+};
+
+pub const ArgumentValue: type = union(enum(u8)) {
+    literal: ValueType,
+    variable: []const u8,
 };
 
 pub const ValueType: type = enum {

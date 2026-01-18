@@ -102,6 +102,91 @@ pub fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.Sc
     return try schema_declarations.toOwnedSlice(allocator);
 }
 
+pub fn parseSelectionFields(parser: *Parser, allocator: Allocator) Error![]ast.SelectionField {
+    var selection_fields: ArrayList(ast.SelectionField) = .empty;
+    errdefer {
+        for (selection_fields.items) |selection_field| destroySelectionField(selection_field, allocator);
+        selection_fields.deinit(selection_fields, allocator);
+    }
+
+    try parseKeyword(parser, .l_brace) orelse {
+        parser.error_info.wanted = "left bracket for selection setl";
+        return error.UnexpectedToken;
+    };
+
+    if (parser.current_token.token_type == .r_brace) {
+        parser.error_info.wanted = "at least 1 member for selection set";
+        return error.UnexpectedToken;
+    }
+
+    while (true) {
+        const selection_field = try parseSelectionField(parser, allocator);
+        try selection_fields.append(allocator, selection_field);
+
+        if (try parseKeyword(parser, .r_brace)) |_| {
+            break;
+        }
+    }
+
+    return try selection_fields.toOwnedSlice(allocator);
+}
+
+pub fn parseSelectionField(parser: *Parser, allocator: Allocator) Error!ast.SelectionField {
+    if (parser.current_token.token_type != .identifier) {
+        parser.error_info.wanted = "identifier for selection field or label";
+        return .UnexpectedToken;
+    }
+
+    var label: ?[]const u8 = null;
+    if (parser.peek_token.token_type == .colon) {
+        label = parser.current_token.token_text;
+        try parser.advance();
+        try parser.advance();
+    }
+
+    const name = switch (parser.current_token.token_type) {
+        .identifier => parser.current_token.token_text,
+        else => {
+            parser.error_info.wanted = "selection field name";
+            return Error.UnexpectedToken;
+        },
+    };
+    try parser.advance();
+
+    const arguments: ?[]ast.Argument = .empty;
+    errdefer {
+        if (arguments) |args| destroyArguments(args, allocator);
+    }
+    if (parser.current_token.token_type == .l_paren) {
+        try parser.advance();
+        arguments = try parseSelectionFieldArguments(parser, allocator);
+        if (parser.current_token.token_type != .r_paren) {
+            parser.error_info.wanted = "closing paren for field arguments";
+            return Error.UnexpectedToken;
+        }
+        try parser.advance();
+    }
+
+    const directives_opt: ?[]ast.Directive = try parseDirectives(parser, allocator);
+    errdefer if (directives_opt) |directives| destroyDirectives(directives, allocator);
+
+    var selection_set: ?[]ast.SelectionField = null;
+    errdefer {
+        if (selection_set) |v| destroySelectionFields(v, allocator);
+    }
+    if (parser.current_token.token_type == .l_brace) {
+        selection_set = try parseSelectionFields(parser, allocator);
+    }
+
+    return ast.SelectionField{
+        .arguments = arguments,
+        .directives = directives_opt,
+        .selection_set = selection_set,
+        .name = name,
+        .label = label,
+    };
+}
+
 test "parseSchemaDeclaration" {
     {
         const input =
@@ -988,6 +1073,63 @@ fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
     return try values.toOwnedSlice(allocator);
 }
 
+fn parseSelectionFieldArguments(parser: *Parser, allocator: Allocator) Error!?[]ast.Argument {
+    var pairs: ArrayList(ast.ValuePair) = .empty;
+    errdefer pairs.deinit(allocator);
+
+    while (true) {
+        const key_identifier, const value = try parseValuePair(parser, allocator);
+
+        try pairs.append(allocator, .{ .key = key_identifier, .value = value });
+
+        if (try parseKeyword(parser, .comma)) |_| continue;
+
+        break;
+    }
+
+    return try pairs.toOwnedSlice(allocator);
+}
+
+fn parseArgument(parser: *Parser, allocator: Allocator) Error!ast.Argument {
+    const name = switch (parser.current_token.token_type) {
+        .identifier => |v| v,
+        else => {
+            parser.error_info.wanted = "name for argument";
+            return Error.UnexpectedToken;
+        },
+    };
+
+    if (parser.current_token.token_type != .colon) {
+        parser.error_info.wanted = "colon between argument name and argument value";
+        return Error.UnexpectedToken;
+    }
+    try parser.advance();
+
+    if (parser.current_token.token_type == .dollar) {
+        try parser.advance();
+
+        const variable_name = switch (parser.current_token.token_type) {
+            .identifier => |v| v,
+            else => {
+                parser.error_info.wanted = "variable identifier";
+                return Error.UnexpectedToken;
+            },
+        };
+
+        return ast.Argument{
+            .name = name,
+            .value = .{ .variable = variable_name },
+        };
+    }
+
+    const literal = try parseValue(parser, allocator);
+
+    return ast.Argument{
+        .name = name,
+        .value = .{ .literal = literal },
+    };
+}
+
 fn parseValuePairs(parser: *Parser, allocator: Allocator) Error!?[]ast.ValuePair {
     _ = try parseKeyword(parser, .l_brace) orelse return null;
 
@@ -1349,9 +1491,40 @@ fn destroyValue(value: ast.Value, allocator: Allocator) void {
     }
 }
 
+fn destroyValuePair(value_pair: ast.ValuePair, allocator: Allocator) void {
+    destroyValue(value_pair.value, allocator);
+}
+
+fn destroyValuePairs(value_pairs: []ast.ValuePair, allocator: Allocator) void {
+    for (value_pairs) |value_pair| destroyValuePair(value_pair, allocator);
+}
+
 fn destroyArgumentDefinitions(argument_definitions: []ast.ArgumentDefinition, allocator: Allocator) void {
     for (argument_definitions) |argument_definition| destroyArgumentDefinition(argument_definition, allocator);
     allocator.free(argument_definitions);
+}
+
+fn destroySelectionFields(selection_fields: []ast.SelectionField, allocator: Allocator) void {
+    for (selection_fields) |selection_field| destroySelectionField(selection_field, allocator);
+    allocator.free(selection_fields);
+}
+
+fn destroySelectionField(selection_field: ast.SelectionField, allocator: Allocator) void {
+    if (selection_field.arguments) |arguments| destroyArguments(arguments, allocator);
+    if (selection_field.directives) |directives| destroyDirectives(directives, allocator);
+    if (selection_field.selection_set) |selection_fields| destroySelectionFields(selection_fields, allocator);
+}
+
+fn destroyArguments(arguments: []ast.Argument, allocator: Allocator) void {
+    for (arguments) |argument| destroyArgument(argument, allocator);
+    allocator.free(arguments);
+}
+
+fn destroyArgument(argument: ast.Argument, allocator: Allocator) void {
+    switch (argument.value) {
+        .literal => |v| destroyValue(v, allocator),
+        else => {},
+    }
 }
 
 fn destroyArgumentDefinition(argument_definition: ast.ArgumentDefinition, allocator: Allocator) void {
