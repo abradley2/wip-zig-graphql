@@ -18,6 +18,14 @@ query_edges: ?[]Edge = null,
 mutation_edges: ?[]Edge = null,
 subscription_edges: ?[]Edge = null,
 
+eval_fn: *const fn (edge: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value,
+
+pub fn evalOperations(graph: *Graph, allocator: Allocator, operations: []ast.Operation) !json.Value {
+    if (operations.len == 0) return .null;
+
+    return resolveOperation(graph, allocator, operations[0]);
+}
+
 pub fn resolveOperation(graph: *Graph, allocator: Allocator, operation: ast.Operation) error{
     OutOfMemory,
     UndefinedOperation,
@@ -29,71 +37,38 @@ pub fn resolveOperation(graph: *Graph, allocator: Allocator, operation: ast.Oper
         .subscription => graph.subscription_edges,
     } orelse return error.UndefinedOperation;
 
-    const return_object = try resolveSelection(allocator, operation.selection_set, edges);
+    const return_object = try resolveSelection(graph, allocator, operation.selection_set, edges);
     return .{ .object = return_object };
 }
 
-pub const ResolvedValue: type = struct {};
-
-pub const Resolver: type = struct {
-    a: fn (name: []const u8, edge: Edge) anyerror!ResolvedValue,
-};
-
-pub fn resolveSelection(allocator: Allocator, selection_set: []ast.SelectionField, edges: []Edge) error{
+pub fn resolveSelection(graph: *Graph, allocator: Allocator, selection_set: []ast.SelectionField, edges: []Edge) error{
     OutOfMemory,
     UnknownField,
 }!json.ObjectMap {
+    var object_map: json.ObjectMap = .init(allocator);
     for (selection_set) |selection| {
         const edge = ret: {
             for (edges) |*edge| {
-                if (std.mem.eql(edge.left, selection.name)) {
+                std.debug.print("Comparing {s} to {s}\n", .{ edge.name, selection.name });
+                if (std.mem.eql(u8, edge.name, selection.name)) {
                     break :ret edge;
                 }
             }
             break :ret null;
-        } orelse return error.UnknownField;
+        } orelse continue;
 
-        const value = try Edge.toValue(&edge, allocator);
-        _ = value;
+        const value = try graph.eval_fn(edge, allocator);
         // use selection.name and edge to call the resolver
+
+        try object_map.put(edge.name, value);
 
         if (selection.selection_set) |next_selection| {
             const next_edges = try traverse(allocator, edges, selection.name);
-            try resolveSelection(allocator, next_selection, next_edges);
+            _ = try resolveSelection(graph, allocator, next_selection, next_edges);
         }
     }
-}
 
-pub fn Todo(edge: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value {
-    if (std.mem.eql(u8, edge.left, "Query")) {
-        if (std.mem.eql(edge.name, "todos")) {
-            var todo_array: json.Array = .init(allocator);
-
-            var object_map_one: json.ObjectMap = .init(allocator);
-            object_map_one.put("id", json.Value{ .integer = 456 });
-
-            var object_map_two: json.ObjectMap = .init(allocator);
-            object_map_two.put("id", json.Value{ .integer = 789 });
-
-            try todo_array.append(object_map_one);
-            try todo_array.append(object_map_two);
-
-            return json.Value{ .array = todo_array };
-        }
-    }
-    if (std.mem.eql(u8, edge.left, "User")) {
-        if (std.mem.eql(u8, edge.name, "primary_task")) {
-            var object_map: json.ObjectMap = .init(allocator);
-            object_map.put("id", json.Value{ .integer = 1234 });
-            return json.Value{ .object = object_map };
-        }
-    }
-    if (std.mem.eql(u8, edge.left, "Todo")) {
-        if (std.mem.eql(u8, edge.name, "sub_task")) {
-            return json.Value{.null};
-        }
-    }
-    return json.Value{.null};
+    return object_map;
 }
 
 pub const Edge: type = struct {
@@ -101,12 +76,6 @@ pub const Edge: type = struct {
     name: []const u8,
     arguments: ?[]ast.ArgumentDefinition = null,
     right: ast.GraphQlType,
-    pub fn toValue(self: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value {
-        if (std.mem.eql(self.right.name(), "Todo")) {
-            return try Todo(self, allocator);
-        }
-        return json.Value{.null};
-    }
 };
 
 pub fn codegen(
@@ -121,10 +90,12 @@ pub fn init(
     graph: *Graph,
     allocator: Allocator,
     schema_document: ast.SchemaDocument,
+    eval_fn: *const fn (edge: *const Edge, allocator: Allocator) error{OutOfMemory}!json.Value,
 ) error{
     OutOfMemory,
     InvalidSchemaDocument,
 }!void {
+    graph.eval_fn = eval_fn;
     var query_type_name: []const u8 = "Query";
     var mutation_type_name: []const u8 = "Mutation";
     var subscription_type_name: []const u8 = "Subscription";
@@ -210,8 +181,8 @@ fn fieldsToEdges(allocator: Allocator, name: []const u8, fields: []ast.Field) er
 
     for (fields) |field| {
         try edges.append(allocator, Edge{
-            .name = name,
-            .left = field.name,
+            .name = field.name,
+            .left = name,
             .arguments = field.arguments orelse &[_]ast.ArgumentDefinition{},
             .right = field.graphql_type,
         });
@@ -223,7 +194,7 @@ fn fieldsToEdges(allocator: Allocator, name: []const u8, fields: []ast.Field) er
 pub fn traverse(
     leaky_allocator: Allocator,
     current_edges: []Edge,
-    left: *const []u8,
+    left: []const u8,
 ) error{OutOfMemory}![]Edge {
     var next_edges: ArrayList(Edge) = .empty;
 

@@ -1669,12 +1669,12 @@ fn destroySchemaDeclaration(schema_declaration: ast.SchemaDeclaration, allocator
     }
 }
 
-fn destroyOperation(operation: ast.Operation, allocator: Allocator) void {
+pub fn destroyOperation(operation: ast.Operation, allocator: Allocator) void {
     destroySelectionFields(operation.selection_set, allocator);
     if (operation.directives) |directives| destroyDirectives(directives, allocator);
 }
 
-fn destroyOperations(operations: []ast.Operation, allocator: Allocator) void {
+pub fn destroyOperations(operations: []ast.Operation, allocator: Allocator) void {
     for (operations) |operation| destroyOperation(operation, allocator);
     allocator.free(operations);
 }
