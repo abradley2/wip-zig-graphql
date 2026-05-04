@@ -45,7 +45,7 @@ pub fn resolveSelection(graph: *Graph, allocator: Allocator, selection_set: []as
     OutOfMemory,
     UnknownField,
 }!json.ObjectMap {
-    var object_map: json.ObjectMap = .init(allocator);
+    var object_map: json.ObjectMap = try .init(allocator, &.{}, &.{});
     for (selection_set) |selection| {
         const edge = ret: {
             for (edges) |*edge| {
@@ -60,7 +60,7 @@ pub fn resolveSelection(graph: *Graph, allocator: Allocator, selection_set: []as
         const value = try graph.eval_fn(edge, allocator);
         // use selection.name and edge to call the resolver
 
-        try object_map.put(edge.name, value);
+        try object_map.put(allocator, edge.name, value);
 
         if (selection.selection_set) |next_selection| {
             const next_edges = try traverse(allocator, edges, selection.name);
@@ -176,7 +176,7 @@ pub fn init(
 }
 
 fn fieldsToEdges(allocator: Allocator, name: []const u8, fields: []ast.Field) error{OutOfMemory}![]Edge {
-    var edges: ArrayList(Edge) = .empty;
+    var edges: ArrayList(Edge) = .initCapacity(allocator, fields.len);
     errdefer edges.deinit(allocator);
 
     for (fields) |field| {
