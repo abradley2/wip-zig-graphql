@@ -176,7 +176,7 @@ pub fn init(
 }
 
 fn fieldsToEdges(allocator: Allocator, name: []const u8, fields: []ast.Field) error{OutOfMemory}![]Edge {
-    var edges: ArrayList(Edge) = .initCapacity(allocator, fields.len);
+    var edges: ArrayList(Edge) = try .initCapacity(allocator, fields.len);
     errdefer edges.deinit(allocator);
 
     for (fields) |field| {
