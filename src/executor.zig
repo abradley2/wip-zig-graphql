@@ -46,16 +46,16 @@ pub fn execute(
 
         if (query_field.label) |label| {
             added_field.key = label;
-            try resolveQueryField(
-                arena,
-                resolver,
-                query_definition,
-                query_field,
-                schema,
-                null,
-                &added_field.value,
-            );
         }
+        try resolveQueryField(
+            arena,
+            resolver,
+            query_definition,
+            query_field,
+            schema,
+            null,
+            &added_field.value,
+        );
     }
 
     return .{ .object_type = try fields.toOwnedSlice(arena) };
@@ -114,5 +114,23 @@ pub fn resolveQueryField(
         );
     }
 
-    _ = schema;
+    if (try fieldToTypeDefinition(schema, field_definition)) |next_parent_type| {
+        var fields: ArrayList(ValuePair) = .empty;
+
+        for (query_field.selection) |*next_query_field| {
+            const added_field = try fields.addOne(arena);
+            added_field.key = query_field.name;
+
+            try resolveQueryField(
+                arena,
+                resolver,
+                next_parent_type,
+                next_query_field,
+                schema,
+                // TODO: need to add a parent value here
+                null,
+                &added_field.value,
+            );
+        }
+    }
 }
