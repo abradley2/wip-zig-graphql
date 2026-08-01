@@ -9,7 +9,6 @@ pub const ValueType: type = enum {
     null_type,
     object_type,
     list_type,
-    variable_type,
 };
 
 pub const ValuePair: type = struct {
@@ -25,7 +24,6 @@ pub const Value: type = union(ValueType) {
     null_type: void,
     object_type: []ValuePair,
     list_type: []Value,
-    variable_type: []const u8,
 };
 
 pub const SchemaDocument: type = []SchemaDeclaration;
@@ -193,6 +191,20 @@ pub const Field: type = struct {
     arguments: ?[]ArgumentDefinition,
     directives: ?[]Directive,
     default_value: ?Value,
+
+    pub fn isResolver(self: Field) bool {
+        var is_resolver: bool = false;
+        const directives = self.directives orelse return is_resolver;
+
+        for (directives) |directive| {
+            if (std.mem.eql(u8, directive.name, "resolve")) {
+                is_resolver = true;
+                break;
+            }
+        }
+
+        return is_resolver;
+    }
 };
 
 pub const GraphQlType: type = struct {

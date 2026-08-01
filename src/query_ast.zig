@@ -20,6 +20,7 @@ pub const Operation: type = struct {
 };
 
 pub const QueryField: type = struct {
+    label: ?[]const u8 = null,
     name: []const u8,
     arguments: []const Argument,
     selection: []const QueryField,
@@ -34,3 +35,4 @@ pub const ArgumentValue: type = union(enum(u8)) {
     literal: Value,
     variable: []const u8,
 };
+
