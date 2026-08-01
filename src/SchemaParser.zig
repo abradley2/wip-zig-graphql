@@ -5,7 +5,7 @@ const Allocator = std.mem.Allocator;
 const Lexer = @import("./Lexer.zig");
 const Token = @import("./Token.zig");
 const TokenType = Token.TokenType;
-const ast = @import("./ast.zig");
+const ast = @import("./schema_ast.zig");
 
 lexer: *Lexer,
 current_token: Token,
@@ -17,7 +17,7 @@ pub const ErrorInfo: type = struct {
     wanted: []const u8 = "",
 };
 
-const Parser = @This();
+const SchemaParser = @This();
 
 const ParserError: type = error{
     NotImplemented,
@@ -28,7 +28,7 @@ const ParserError: type = error{
 
 const Error = ParserError || Lexer.Error;
 
-pub fn init(lexer: *Lexer) Error!Parser {
+pub fn init(lexer: *Lexer) Error!SchemaParser {
     return .{
         .lexer = lexer,
         .current_token = try lexer.nextToken(),
@@ -36,7 +36,7 @@ pub fn init(lexer: *Lexer) Error!Parser {
     };
 }
 
-fn advance(parser: *Parser) Error!void {
+fn advance(parser: *SchemaParser) Error!void {
     parser.lexer.read();
 
     parser.current_token = try parser.lexer.nextToken();
@@ -64,7 +64,7 @@ fn positionToLocation(position: usize, input: []const u8) struct { usize, usize 
 test "schema definition language kitchen sink" {
     const input = @embedFile("test_fixtures/sdl_kitchen_sink.graphql");
     var lexer: Lexer = .init(input);
-    var parser: Parser = try .init(&lexer);
+    var parser: SchemaParser = try .init(&lexer);
 
     const schema_document = parseSchemaDocument(&parser, std.testing.allocator) catch |err| {
         if (err == Error.UnexpectedToken) {
@@ -87,65 +87,7 @@ test "schema definition language kitchen sink" {
     try std.testing.expectEqual(38, schema_document.len);
 }
 
-test "parseQueryDocument" {
-    const input =
-        \\getTodos(filterCompleted: true) {
-        \\  id
-        \\  name
-        \\  completed
-        \\}
-    ;
-
-    var lexer: Lexer = .init(input);
-    var parser: Parser = try .init(&lexer);
-
-    const query_document = parseQueryDocument(&parser, std.testing.allocator) catch |err| {
-        std.debug.print("Error parsing document, got:\n{s}\n\nwanted:\n{s}", .{
-            parser.lexer.input[parser.lexer.position..],
-            parser.error_info.wanted,
-        });
-        return err;
-    };
-    defer destroyOperations(query_document, std.testing.allocator);
-
-    try std.testing.expectEqual(1, query_document.len);
-
-    const root_operation = query_document[0];
-
-    try std.testing.expectEqual(1, root_operation.selection_set.len);
-
-    const todos_query_field = root_operation.selection_set[0];
-
-    try std.testing.expectEqualStrings("getTodos", todos_query_field.name);
-}
-
-pub fn parseQueryDocument(parser: *Parser, allocator: Allocator) Error![]ast.Operation {
-    var operations: ArrayList(ast.Operation) = .empty;
-    errdefer {
-        for (operations.items) |operation| destroySelectionFields(operation.selection_set, allocator);
-        operations.deinit(allocator);
-    }
-
-    var root_operation_selections: ArrayList(ast.SelectionField) = .empty;
-
-    while (parser.current_token.token_type != .eof) {
-        const selection_field = try parseSelectionField(parser, allocator);
-        try root_operation_selections.append(allocator, selection_field);
-    }
-
-    const root_operation = ast.Operation{
-        .name = "query",
-        .directives = null,
-        .variables = null,
-        .operation_type = .query,
-        .selection_set = try root_operation_selections.toOwnedSlice(allocator),
-    };
-    try operations.append(allocator, root_operation);
-
-    return try operations.toOwnedSlice(allocator);
-}
-
-pub fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.SchemaDeclaration {
+pub fn parseSchemaDocument(parser: *SchemaParser, allocator: Allocator) Error![]ast.SchemaDeclaration {
     var schema_declarations: ArrayList(ast.SchemaDeclaration) = .empty;
     errdefer {
         for (schema_declarations.items) |schema_declaration| destroySchemaDeclaration(schema_declaration, allocator);
@@ -160,7 +102,7 @@ pub fn parseSchemaDocument(parser: *Parser, allocator: Allocator) Error![]ast.Sc
     return try schema_declarations.toOwnedSlice(allocator);
 }
 
-pub fn parseSelectionFields(parser: *Parser, allocator: Allocator) Error![]ast.SelectionField {
+pub fn parseSelectionFields(parser: *SchemaParser, allocator: Allocator) Error![]ast.SelectionField {
     var selection_fields: ArrayList(ast.SelectionField) = .empty;
     errdefer {
         for (selection_fields.items) |selection_field| destroySelectionField(selection_field, allocator);
@@ -189,7 +131,7 @@ pub fn parseSelectionFields(parser: *Parser, allocator: Allocator) Error![]ast.S
     return try selection_fields.toOwnedSlice(allocator);
 }
 
-pub fn parseSelectionField(parser: *Parser, allocator: Allocator) Error!ast.SelectionField {
+pub fn parseSelectionField(parser: *SchemaParser, allocator: Allocator) Error!ast.SelectionField {
     if (parser.current_token.token_type != .identifier) {
         parser.error_info.wanted = "identifier for selection field or label";
         return Error.UnexpectedToken;
@@ -257,7 +199,7 @@ test "parseSchemaDeclaration" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const schema_declaration = try parseSchemaDeclaration(&parser, std.testing.allocator);
         defer destroySchemaDeclaration(schema_declaration, std.testing.allocator);
@@ -269,7 +211,7 @@ test "parseSchemaDeclaration" {
     {
         const input = "scalar MyScalar";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
 
@@ -288,7 +230,7 @@ test "parseSchemaDeclaration" {
             \\) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE
         ;
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const schema_decl = try parseSchemaDeclaration(&parser, std.testing.allocator);
         const directive_definition = switch (schema_decl.definition) {
@@ -315,7 +257,7 @@ test "parseSchemaDeclaration" {
             \\}
         ;
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const schema_declaration = try parseSchemaDeclaration(&parser, std.testing.allocator);
         const type_definition = switch (schema_declaration.definition) {
@@ -341,7 +283,7 @@ test "parseSchemaDeclaration" {
             \\{ one: String }
         ;
         var lexer: Lexer = .init(input);
-        const parser: Parser = try .init(&lexer);
+        const parser: SchemaParser = try .init(&lexer);
 
         _ = parser;
     }
@@ -351,7 +293,7 @@ test "parseImplements" {
     {
         const input = "implements TypeOne & TypeTwo";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const implement_type_refs = (try parseImplements(&parser, std.testing.allocator)) orelse return error.UnexpectedNull;
         defer std.testing.allocator.free(implement_type_refs);
@@ -364,7 +306,7 @@ test "parseImplements" {
     {
         const input = "implements TypeOne";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const implement_type_refs = (try parseImplements(&parser, std.testing.allocator)) orelse return error.UnexpectedNull;
         defer std.testing.allocator.free(implement_type_refs);
@@ -374,7 +316,7 @@ test "parseImplements" {
     }
 }
 
-fn parseImplements(parser: *Parser, allocator: Allocator) Error!?[][]const u8 {
+fn parseImplements(parser: *SchemaParser, allocator: Allocator) Error!?[][]const u8 {
     if (parser.current_token.token_type == .keyword_implements) {
         try parser.advance();
     } else {
@@ -412,7 +354,7 @@ test "parseArgumentDefinitions" {
     {
         const input = "(subtaskId: String!, filterDone: Boolean = false, otherIds: [Int] = [1, 2, 3])";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const argument_definitions = (try parseArgumentDefinitions(&parser, std.testing.allocator)) orelse
             return error.UnexpectedNull;
@@ -437,7 +379,7 @@ test "parseArgumentDefinitions" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const argument_definitions = (try parseArgumentDefinitions(&parser, std.testing.allocator)) orelse
             return error.UnexpectedNull;
@@ -453,7 +395,7 @@ test "parseArgumentDefinitions" {
     }
 }
 
-fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.ArgumentDefinition {
+fn parseArgumentDefinitions(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.ArgumentDefinition {
     if (parser.current_token.token_type == .l_paren) {
         try parser.advance();
     } else {
@@ -488,7 +430,7 @@ fn parseArgumentDefinitions(parser: *Parser, allocator: Allocator) Error!?[]ast.
     return try argument_definitions.toOwnedSlice(allocator);
 }
 
-fn parseArgumentDefinition(parser: *Parser, allocator: Allocator) Error!ast.ArgumentDefinition {
+fn parseArgumentDefinition(parser: *SchemaParser, allocator: Allocator) Error!ast.ArgumentDefinition {
     const name = try parseIdentifier(parser, "name for argument definition");
 
     _ = try parseKeyword(parser, .colon) orelse {
@@ -516,7 +458,7 @@ fn parseArgumentDefinition(parser: *Parser, allocator: Allocator) Error!ast.Argu
     };
 }
 
-fn parseIdentifier(parser: *Parser, wanted: []const u8) ![]const u8 {
+fn parseIdentifier(parser: *SchemaParser, wanted: []const u8) ![]const u8 {
     if (parser.current_token.token_type == .identifier) {
         const identifier = parser.current_token.token_text;
         try parser.advance();
@@ -526,7 +468,7 @@ fn parseIdentifier(parser: *Parser, wanted: []const u8) ![]const u8 {
     return error.UnexpectedToken;
 }
 
-fn parseKeyword(parser: *Parser, keyword: TokenType) !?struct {} {
+fn parseKeyword(parser: *SchemaParser, keyword: TokenType) !?struct {} {
     if (parser.current_token.token_type == keyword) {
         try parser.advance();
         return .{};
@@ -549,7 +491,7 @@ test "parseTypeDefinition" {
             \\}
         ;
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const type_definition =
             try parseTypeDefinition(&parser, std.testing.allocator) orelse
@@ -559,7 +501,7 @@ test "parseTypeDefinition" {
     }
 }
 
-fn parseSchemaDefinition(parser: *Parser, allocator: Allocator) Error!?ast.SchemaDefinition {
+fn parseSchemaDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.SchemaDefinition {
     _ = try parseKeyword(parser, .keyword_schema) orelse return null;
 
     const directives_opt = try parseDirectives(parser, allocator);
@@ -574,7 +516,7 @@ fn parseSchemaDefinition(parser: *Parser, allocator: Allocator) Error!?ast.Schem
     };
 }
 
-fn parseTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.TypeDefinition {
+fn parseTypeDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.TypeDefinition {
     _ = try parseKeyword(parser, .keyword_type) orelse return null;
 
     const name = try parseIdentifier(parser, "name for type");
@@ -596,7 +538,7 @@ fn parseTypeDefinition(parser: *Parser, allocator: Allocator) Error!?ast.TypeDef
     };
 }
 
-fn parseScalarDefinition(parser: *Parser, allocator: Allocator) Error!?ast.ScalarDefinition {
+fn parseScalarDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.ScalarDefinition {
     _ = try parseKeyword(parser, .keyword_scalar) orelse return null;
 
     const name = try parseIdentifier(parser, "name for scalar");
@@ -610,7 +552,7 @@ fn parseScalarDefinition(parser: *Parser, allocator: Allocator) Error!?ast.Scala
     };
 }
 
-fn parseInterfaceDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InterfaceDefinition {
+fn parseInterfaceDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.InterfaceDefinition {
     _ = try parseKeyword(parser, .keyword_interface) orelse return null;
 
     const name = try parseIdentifier(parser, "name for interface");
@@ -631,7 +573,7 @@ fn parseInterfaceDefinition(parser: *Parser, allocator: Allocator) Error!?ast.In
     };
 }
 
-fn parseInputDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputDefinition {
+fn parseInputDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.InputDefinition {
     _ = try parseKeyword(parser, .keyword_input) orelse return null;
 
     const name = try parseIdentifier(parser, "name for input type");
@@ -649,7 +591,7 @@ fn parseInputDefinition(parser: *Parser, allocator: Allocator) Error!?ast.InputD
     };
 }
 
-fn parseSchemaDeclaration(parser: *Parser, allocator: Allocator) Error!ast.SchemaDeclaration {
+fn parseSchemaDeclaration(parser: *SchemaParser, allocator: Allocator) Error!ast.SchemaDeclaration {
     var description: ?[]const u8 = null;
     if (parser.current_token.token_type == .string) {
         description = parser.current_token.token_text;
@@ -702,7 +644,7 @@ test "parseEnumDefinition" {
     ;
 
     var lexer: Lexer = .init(input);
-    var parser: Parser = try .init(&lexer);
+    var parser: SchemaParser = try .init(&lexer);
 
     const enum_definition =
         try parseEnumDefinition(&parser, std.testing.allocator) orelse
@@ -712,7 +654,7 @@ test "parseEnumDefinition" {
     try std.testing.expectEqualStrings("MyEnum", enum_definition.name);
 }
 
-fn parseEnumDefinition(parser: *Parser, allocator: Allocator) Error!?ast.EnumDefinition {
+fn parseEnumDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.EnumDefinition {
     _ = try parseKeyword(parser, .keyword_enum) orelse return null;
 
     const name = try parseIdentifier(parser, "name for enum type");
@@ -730,7 +672,7 @@ fn parseEnumDefinition(parser: *Parser, allocator: Allocator) Error!?ast.EnumDef
     };
 }
 
-fn parseEnumEntries(parser: *Parser, allocator: Allocator) Error!?[]ast.EnumEntryDefinition {
+fn parseEnumEntries(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.EnumEntryDefinition {
     _ = try parseKeyword(parser, .l_brace) orelse return null;
 
     var entries: ArrayList(ast.EnumEntryDefinition) = .empty;
@@ -766,7 +708,7 @@ test "parseUnionDefinition" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const union_definition =
             try parseUnionDefinition(&parser, std.testing.allocator) orelse
@@ -787,7 +729,7 @@ test "parseUnionDefinition" {
     }
 }
 
-fn parseUnionDefinition(parser: *Parser, allocator: Allocator) Error!?ast.UnionDefinition {
+fn parseUnionDefinition(parser: *SchemaParser, allocator: Allocator) Error!?ast.UnionDefinition {
     _ = try parseKeyword(parser, .keyword_union) orelse return null;
 
     const name = try parseIdentifier(parser, "name for union");
@@ -806,7 +748,7 @@ fn parseUnionDefinition(parser: *Parser, allocator: Allocator) Error!?ast.UnionD
     };
 }
 
-fn parseUnionEntries(parser: *Parser, allocator: Allocator) Error!?[][]const u8 {
+fn parseUnionEntries(parser: *SchemaParser, allocator: Allocator) Error!?[][]const u8 {
     _ = try parseKeyword(parser, .equals) orelse return null;
 
     _ = try parseKeyword(parser, .pipe);
@@ -837,7 +779,7 @@ test "parseDirectiveDefinition" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const directive_definition =
             try parseDirectiveDefinition(&parser, std.testing.allocator) orelse
@@ -854,7 +796,7 @@ test "parseDirectiveDefinition" {
 }
 
 fn parseDirectiveDefinition(
-    parser: *Parser,
+    parser: *SchemaParser,
     allocator: Allocator,
 ) Error!?ast.DirectiveDefinition {
     _ = try parseKeyword(parser, .keyword_directive) orelse return null;
@@ -882,7 +824,7 @@ fn parseDirectiveDefinition(
     };
 }
 
-fn parseDirectiveTargets(parser: *Parser, allocator: Allocator) Error![]ast.DirectiveTarget {
+fn parseDirectiveTargets(parser: *SchemaParser, allocator: Allocator) Error![]ast.DirectiveTarget {
     _ = try parseKeyword(parser, .keyword_on) orelse {
         parser.error_info.wanted = "expecting keyword 'on' followed by valid directive locations";
         return error.UnexpectedToken;
@@ -920,7 +862,7 @@ test "parseFields" {
             \\}
         ;
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const fields = (try parseFields(&parser, std.testing.allocator)) orelse
             return error.UnexpectedNull;
@@ -938,7 +880,7 @@ test "parseFields" {
 test "parseValue" {
     {
         var lexer: Lexer = .init("123.0");
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
 
@@ -953,7 +895,7 @@ test "parseValue" {
 
     {
         var lexer: Lexer = .init("-123");
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
 
@@ -968,7 +910,7 @@ test "parseValue" {
 
     {
         var lexer: Lexer = .init("\"hello\"");
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
 
@@ -983,7 +925,7 @@ test "parseValue" {
 
     {
         var lexer: Lexer = .init("{ hello: \"World\" }");
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
 
@@ -999,7 +941,7 @@ test "parseValue" {
 
     {
         var lexer: Lexer = .init("[1, 2, 3]");
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
 
@@ -1013,7 +955,7 @@ test "parseValue" {
     }
 }
 
-fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
+fn parseValue(parser: *SchemaParser, allocator: Allocator) Error!ast.Value {
     if (try parseStringValue(parser)) |string_value| return .{ .string_type = string_value };
 
     if (try parseFloatValue(parser)) |float_value| return .{ .float_type = float_value };
@@ -1034,7 +976,7 @@ fn parseValue(parser: *Parser, allocator: Allocator) Error!ast.Value {
     return error.UnexpectedToken;
 }
 
-fn parseStringValue(parser: *Parser) Error!?[]const u8 {
+fn parseStringValue(parser: *SchemaParser) Error!?[]const u8 {
     if (parser.current_token.token_type == .string) {
         const string_value = parser.current_token.token_text[1 .. parser.current_token.token_text.len - 1];
 
@@ -1052,7 +994,7 @@ test "parseIntValue" {
     }
 }
 
-fn parseIntValue(parser: *Parser) Error!?i64 {
+fn parseIntValue(parser: *SchemaParser) Error!?i64 {
     if (parser.current_token.token_type == .number and
         !std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))
     {
@@ -1073,7 +1015,7 @@ test "parseFloatValue" {
     {
         const input = "1.23e4";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const float_value = try parseFloatValue(&parser);
 
@@ -1084,7 +1026,7 @@ test "parseFloatValue" {
         const input = "3.7e-5";
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const float_value = try parseFloatValue(&parser);
 
@@ -1092,7 +1034,7 @@ test "parseFloatValue" {
     }
 }
 
-fn parseFloatValue(parser: *Parser) Error!?f64 {
+fn parseFloatValue(parser: *SchemaParser) Error!?f64 {
     if (parser.current_token.token_type == .number and
         std.mem.containsAtLeastScalar(u8, parser.current_token.token_text, 1, '.'))
     {
@@ -1108,7 +1050,7 @@ fn parseFloatValue(parser: *Parser) Error!?f64 {
     return null;
 }
 
-fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
+fn parseListValue(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.Value {
     _ = try parseKeyword(parser, .l_bracket) orelse return null;
 
     var values: ArrayList(ast.Value) = .empty;
@@ -1131,7 +1073,7 @@ fn parseListValue(parser: *Parser, allocator: Allocator) Error!?[]ast.Value {
     return try values.toOwnedSlice(allocator);
 }
 
-fn parseSelectionFieldArguments(parser: *Parser, allocator: Allocator) Error!?[]ast.Argument {
+fn parseSelectionFieldArguments(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.Argument {
     var arguments: ArrayList(ast.Argument) = .empty;
     errdefer {
         for (arguments.items) |argument| destroyArgument(argument, allocator);
@@ -1151,7 +1093,7 @@ fn parseSelectionFieldArguments(parser: *Parser, allocator: Allocator) Error!?[]
     return try arguments.toOwnedSlice(allocator);
 }
 
-fn parseArgument(parser: *Parser, allocator: Allocator) Error!ast.Argument {
+fn parseArgument(parser: *SchemaParser, allocator: Allocator) Error!ast.Argument {
     const name = switch (parser.current_token.token_type) {
         .identifier => parser.current_token.token_text,
         else => {
@@ -1192,7 +1134,7 @@ fn parseArgument(parser: *Parser, allocator: Allocator) Error!ast.Argument {
     };
 }
 
-fn parseValuePairs(parser: *Parser, allocator: Allocator) Error!?[]ast.ValuePair {
+fn parseValuePairs(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.ValuePair {
     _ = try parseKeyword(parser, .l_brace) orelse return null;
 
     var pairs: ArrayList(ast.ValuePair) = .empty;
@@ -1214,7 +1156,7 @@ fn parseValuePairs(parser: *Parser, allocator: Allocator) Error!?[]ast.ValuePair
     return try pairs.toOwnedSlice(allocator);
 }
 
-fn parseValuePair(parser: *Parser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
+fn parseValuePair(parser: *SchemaParser, allocator: Allocator) Error!struct { []const u8, ast.Value } {
     const key_identifier = try parseIdentifier(parser, "identifier key for object key/value pair");
 
     _ = try parseKeyword(parser, .colon) orelse {
@@ -1232,7 +1174,7 @@ test "parseField" {
         const input = "hello: [World]";
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const field = try parser.parseField(std.testing.allocator);
 
@@ -1249,7 +1191,7 @@ test "parseField" {
         const input = "hello(argA: String): [World]";
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const field = try parser.parseField(std.testing.allocator);
         defer destroyField(field, std.testing.allocator);
@@ -1269,7 +1211,7 @@ test "parseField" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const field = try parser.parseField(std.testing.allocator);
         defer destroyField(field, std.testing.allocator);
@@ -1285,7 +1227,7 @@ test "parseField" {
     }
 }
 
-fn parseFields(parser: *Parser, allocator: Allocator) Error!?[]ast.Field {
+fn parseFields(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.Field {
     if (parser.current_token.token_type == .l_brace) {
         try parser.advance();
     } else {
@@ -1311,7 +1253,7 @@ fn parseFields(parser: *Parser, allocator: Allocator) Error!?[]ast.Field {
     return try fields.toOwnedSlice(allocator);
 }
 
-fn parseField(parser: *Parser, allocator: Allocator) Error!ast.Field {
+fn parseField(parser: *SchemaParser, allocator: Allocator) Error!ast.Field {
     var description: ?[]const u8 = null;
     if (parser.current_token.token_type == .string) {
         description = parser.current_token.token_text;
@@ -1370,7 +1312,7 @@ test "parseDirective" {
         ;
 
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const directive = (try parseDirective(&parser, std.testing.allocator)) orelse
             return error.UnexpectedNull;
@@ -1388,7 +1330,7 @@ test "parseDirective" {
     {
         const input = "@directive_no_arguments";
         var lexer: Lexer = .init(input);
-        var parser: Parser = try .init(&lexer);
+        var parser: SchemaParser = try .init(&lexer);
 
         const directive = (try parseDirective(&parser, std.testing.allocator)) orelse
             return error.UnexpectedNull;
@@ -1397,7 +1339,7 @@ test "parseDirective" {
     }
 }
 
-fn parseDirectives(parser: *Parser, allocator: Allocator) Error!?[]ast.Directive {
+fn parseDirectives(parser: *SchemaParser, allocator: Allocator) Error!?[]ast.Directive {
     if (parser.current_token.token_type != .at_sign) {
         return null;
     }
@@ -1412,7 +1354,7 @@ fn parseDirectives(parser: *Parser, allocator: Allocator) Error!?[]ast.Directive
     return try directives.toOwnedSlice(allocator);
 }
 
-fn parseDirective(parser: *Parser, allocator: Allocator) Error!?ast.Directive {
+fn parseDirective(parser: *SchemaParser, allocator: Allocator) Error!?ast.Directive {
     if (parser.current_token.token_type == .at_sign) {
         try parser.advance();
     } else {
@@ -1466,7 +1408,7 @@ fn parseDirective(parser: *Parser, allocator: Allocator) Error!?ast.Directive {
     };
 }
 
-fn parseGraphQlType(parser: *Parser, allocator: Allocator) Error!ast.GraphQlType {
+fn parseGraphQlType(parser: *SchemaParser, allocator: Allocator) Error!ast.GraphQlType {
     if (parser.current_token.token_type == .l_bracket) {
         try parser.advance();
 
@@ -1669,12 +1611,9 @@ fn destroySchemaDeclaration(schema_declaration: ast.SchemaDeclaration, allocator
     }
 }
 
-pub fn destroyOperation(operation: ast.Operation, allocator: Allocator) void {
-    destroySelectionFields(operation.selection_set, allocator);
-    if (operation.directives) |directives| destroyDirectives(directives, allocator);
-}
-
-pub fn destroyOperations(operations: []ast.Operation, allocator: Allocator) void {
-    for (operations) |operation| destroyOperation(operation, allocator);
-    allocator.free(operations);
+pub fn destroySchemaDocument(schema_document: []ast.SchemaDeclaration, allocator: Allocator) void {
+    for (schema_document) |schema_declaration| {
+        destroySchemaDeclaration(schema_declaration, allocator);
+    }
+    allocator.free(schema_document);
 }

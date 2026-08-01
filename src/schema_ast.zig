@@ -1,26 +1,31 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const OperationType: type = enum {
-    query,
-    mutation,
-    subscription,
+pub const ValueType: type = enum {
+    int_type,
+    float_type,
+    string_type,
+    boolean_type,
+    null_type,
+    object_type,
+    list_type,
+    variable_type,
 };
 
-pub const Operation: type = struct {
-    operation_type: OperationType,
-    name: ?[]const u8,
-    directives: ?[]Directive,
-    selection_set: []SelectionField,
-    variables: ?[]ArgumentDefinition,
+pub const ValuePair: type = struct {
+    key: []const u8,
+    value: Value,
 };
 
-pub const SelectionField: type = struct {
-    label: ?[]const u8,
-    arguments: ?[]Argument,
-    directives: ?[]Directive,
-    name: []const u8,
-    selection_set: ?[]SelectionField,
+pub const Value: type = union(ValueType) {
+    int_type: i64,
+    float_type: f64,
+    string_type: []const u8,
+    boolean_type: bool,
+    null_type: void,
+    object_type: []ValuePair,
+    list_type: []Value,
+    variable_type: []const u8,
 };
 
 pub const SchemaDocument: type = []SchemaDeclaration;
@@ -236,43 +241,4 @@ pub const DirectiveTarget: type = enum {
 
         return ssm.get(s);
     }
-};
-
-pub const Arguments: type = []Argument;
-
-pub const Argument: type = struct {
-    name: []const u8,
-    value: ArgumentValue,
-};
-
-pub const ArgumentValue: type = union(enum(u8)) {
-    literal: Value,
-    variable: []const u8,
-};
-
-pub const ValueType: type = enum {
-    int_type,
-    float_type,
-    string_type,
-    boolean_type,
-    null_type,
-    object_type,
-    list_type,
-    variable_type,
-};
-
-pub const ValuePair: type = struct {
-    key: []const u8,
-    value: Value,
-};
-
-pub const Value: type = union(ValueType) {
-    int_type: i64,
-    float_type: f64,
-    string_type: []const u8,
-    boolean_type: bool,
-    null_type: void,
-    object_type: []ValuePair,
-    list_type: []Value,
-    variable_type: []const u8,
 };

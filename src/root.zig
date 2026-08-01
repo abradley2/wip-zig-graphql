@@ -1,10 +1,8 @@
 const std = @import("std");
-const ast = @import("./ast.zig");
+const schema_ast = @import("./schema_ast.zig");
 
 pub const Lexer = @import("./Lexer.zig");
-pub const Parser = @import("./Parser.zig");
-pub const Graph = @import("./Graph.zig");
-pub const GraphQlType = ast.GraphQlType;
+pub const SchemaParser = @import("./SchemaParser.zig");
 
 test "all tests" {
     std.testing.refAllDecls(@This());
