@@ -7,10 +7,7 @@ const Allocator = std.mem.Allocator;
 const Value = schema_ast.Value;
 const ValuePair = schema_ast.ValuePair;
 
-pub fn queryDefinitionFromSchema(schema: schema_ast.SchemaDocument) error{
-    InvalidQueryDefinition,
-    MissingQueryDefinition,
-}!schema_ast.TypeDefinition {
+pub fn queryDefinitionFromSchema(schema: schema_ast.SchemaDocument) !schema_ast.TypeDefinition {
     for (schema) |*schema_declaration| {
         if (!std.mem.eql(u8, "Query", schema_ast.getDefinitionName(schema_declaration.definition))) {
             continue;
@@ -60,6 +57,25 @@ pub fn execute(
             );
         }
     }
+
+    return .{ .object_type = try fields.toOwnedSlice(arena) };
+}
+
+fn fieldToTypeDefinition(
+    schema: schema_ast.SchemaDocument,
+    field_definition: schema_ast.Field,
+) error{UnknownType}!?schema_ast.TypeDefinition {
+    for (schema) |schema_declaration| {
+        if (!std.mem.eql(u8, schema_ast.getDefinitionName(schema_declaration.definition), field_definition.graphql_type.name())) {
+            continue;
+        }
+        switch (schema_declaration.definition) {
+            .type_definition => |type_definition| return type_definition,
+            else => return null,
+        }
+    }
+
+    return error.UnknownType;
 }
 
 pub fn resolveQueryField(
@@ -73,7 +89,7 @@ pub fn resolveQueryField(
     ) anyerror!Value,
     parent_type: schema_ast.TypeDefinition,
     query_field: *const query_ast.QueryField,
-    schema: *const schema_ast.SchemaDocument,
+    schema: schema_ast.SchemaDocument,
     parent_value: ?*const Value,
     value: *Value,
 ) !void {
@@ -96,15 +112,6 @@ pub fn resolveQueryField(
             query_field,
             parent_value,
         );
-    }
-
-    const is_scalar: bool = switch (value) {
-        .boolean_type, .float_type, .int_type, .null_type, .string_type => true,
-        else => false,
-    };
-
-    if (is_scalar) {
-        return;
     }
 
     _ = schema;
