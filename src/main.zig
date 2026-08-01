@@ -11,8 +11,6 @@ test "all tests" {
     std.testing.refAllDecls(@This());
 }
 
-const DebugAllocator: type = std.heap.DebugAllocator(.{});
-
 pub fn main(init: std.process.Init) !void {
     const input =
         \\type Todo {
@@ -24,7 +22,12 @@ pub fn main(init: std.process.Init) !void {
         \\type Query {
         \\  todos(filter_completed: Boolean = null): [Todo]
         \\}
+        \\ 
+        \\schema {
+        \\  query: Query
+        \\}
     ;
+
     var lexer: Lexer = .init(input);
     var parser: SchemaParser = try .init(&lexer);
 

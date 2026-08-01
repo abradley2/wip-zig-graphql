@@ -16,13 +16,14 @@ pub const VariableDefinition: type = struct {
 pub const Operation: type = struct {
     typ: OperationType,
     variable_definitions: []const VariableDefinition,
+    selection: []const QueryField,
 };
 
 pub const QueryField: type = struct {
-    arguments: Arguments,
+    name: []const u8,
+    arguments: []const Argument,
+    selection: []const QueryField,
 };
-
-pub const Arguments: type = []Argument;
 
 pub const Argument: type = struct {
     name: []const u8,
