@@ -58,7 +58,7 @@ pub fn execute(
         );
     }
 
-    return .{ .object_type = try fields.toOwnedSlice(arena) };
+    return .{ .object_type = fields };
 }
 
 fn fieldToTypeDefinition(
@@ -127,8 +127,7 @@ pub fn resolveQueryField(
                 next_parent_type,
                 next_query_field,
                 schema,
-                // TODO: need to add a parent value here
-                null,
+                value,
                 &added_field.value,
             );
         }
