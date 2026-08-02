@@ -928,15 +928,14 @@ test "parseValue" {
         var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
+        defer destroyValue(value, std.testing.allocator);
 
         const object_value = switch (value) {
             .object_type => |v| v,
             else => return error.ExpectedObjectValue,
         };
 
-        try std.testing.expectEqual(1, object_value.len);
-
-        std.testing.allocator.free(object_value);
+        try std.testing.expectEqual(1, object_value.items.len);
     }
 
     {
@@ -944,14 +943,14 @@ test "parseValue" {
         var parser: SchemaParser = try .init(&lexer);
 
         const value = try parseValue(&parser, std.testing.allocator);
+        defer destroyValue(value, std.testing.allocator);
 
         const list_value = switch (value) {
             .list_type => |v| v,
             else => return error.ExpectedListValue,
         };
 
-        try std.testing.expectEqual(3, list_value.len);
-        destroyValue(value, std.testing.allocator);
+        try std.testing.expectEqual(3, list_value.items.len);
     }
 }
 
@@ -962,9 +961,9 @@ fn parseValue(parser: *SchemaParser, allocator: Allocator) Error!ast.Value {
 
     if (try parseIntValue(parser)) |int_value| return .{ .int_type = int_value };
 
-    if (try parseListValue(parser, allocator)) |list_value| return .{ .list_type = list_value };
+    if (try parseListValue(parser, allocator)) |list_value| return .{ .list_type = .fromOwnedSlice(list_value) };
 
-    if (try parseValuePairs(parser, allocator)) |value_pairs| return .{ .object_type = value_pairs };
+    if (try parseValuePairs(parser, allocator)) |value_pairs| return .{ .object_type = .fromOwnedSlice(value_pairs) };
 
     if (try parseKeyword(parser, .keyword_true)) |_| return .{ .boolean_type = true };
 
@@ -1484,12 +1483,12 @@ fn destroyGraphQlType(graphQlType: ast.GraphQlType, allocator: Allocator) void {
 fn destroyValue(value: ast.Value, allocator: Allocator) void {
     switch (value) {
         .list_type => |list| {
-            for (list) |sub_value| destroyValue(sub_value, allocator);
-            allocator.free(list);
+            for (list.items) |sub_value| destroyValue(sub_value, allocator);
+            allocator.free(list.items.ptr[0..list.capacity]);
         },
         .object_type => |obj| {
-            for (obj) |pair| destroyValue(pair.value, allocator);
-            allocator.free(obj);
+            for (obj.items) |pair| destroyValue(pair.value, allocator);
+            allocator.free(obj.items.ptr[0..obj.capacity]);
         },
         else => {},
     }

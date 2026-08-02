@@ -1,5 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 pub const ValueType: type = enum {
     int_type,
@@ -22,8 +23,14 @@ pub const Value: type = union(ValueType) {
     string_type: []const u8,
     boolean_type: bool,
     null_type: void,
-    object_type: []ValuePair,
-    list_type: []Value,
+    object_type: ArrayList(ValuePair),
+    list_type: ArrayList(Value),
+
+    pub fn validFor(self: *const Value, graphql_type: GraphQlType) bool {
+        _ = self;
+        _ = graphql_type;
+        return true;
+    }
 };
 
 pub const SchemaDocument: type = []SchemaDeclaration;
